@@ -55,6 +55,16 @@ for _ in range(100):
 env.close()
 """
 
+"""
 # what environments are there?
 print("You have access to the following environments:")
 print(gym.envs.registry.all())
+"""
+
+# looking at carracing
+env = gym.make('CarRacing-v0')
+obs = env.reset()
+for i in range(1000):
+    env.render()
+    obs, rew, done, info = env.step(env.action_space.sample())
+env.close()
