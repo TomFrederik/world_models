@@ -35,7 +35,7 @@ def main(id, number_rollouts):
         # save rollout
         rollouts.append((actions, observations))
 
-    print(rollouts)
+    env.close()
 
     np.save('random_rollouts_{}.npy'.format(id), rollouts)
 
