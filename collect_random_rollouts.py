@@ -10,8 +10,6 @@ import argparse
 def main(id, number_rollouts):
     env = gym.make('CarRacing-v0')
 
-    #env = wrappers.Monitor(env, "./gym_results",force=True)
-   
     rollouts = []
 
     for counter in range(number_rollouts):

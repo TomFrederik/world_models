@@ -18,6 +18,28 @@ import torch
 from torch.utils.data import DataLoader
 
 
+def get_batches(data, batch_size):
+    ''' 
+    params:
+    data: np array of shape (N, dim_of_image)
+    batch_size: int
+    
+    returns:
+    batches: N/batch_size batches of shape (batch_size, dim_of_image)
+    '''
+
+    if data.shape[0] % batch_size != 0:
+        # zero pad data
+        data.append(np.zeros((batch_size - (data.shape[0] % batch_size), data.shape[1:])))
+    
+    if data.shape[0] % batch_size != 0:
+        raise ValueError("Padding didn't work")
+
+    batches = np.split(data, data.shape[0]/batch_size)
+
+    return np.array(batches)
+
+
 def train(config):
 
     # get arguments
@@ -34,7 +56,7 @@ def train(config):
     encoder = models.Encoder(input_dim, conv_layers, z_dim)
     # not sure if I somehow have to change dimensions of the conv layers here
     decoder = models.Decoder(input_dim, conv_layers, z_dim)
-    model = models.VAE(encoder, decoder)
+    model = models.VAE(encoder, decoder).cuda()
 
     # init crit and optim
     criterion = nn.MSELoss()
@@ -42,8 +64,10 @@ def train(config):
 
 
     # get data
-    data = 
-    batches = 
+    data = np.load('./data/random_rollouts_0_500.npy') # 500 2-tuples (action, observation)
+    batches = get_batches(data[:,1], batch_size)
+    # store on GPU
+    batches = torch.from_numpy(batches).cuda()
 
     # loss array
     losses = []
@@ -72,6 +96,10 @@ def train(config):
             print("Train step {}/{} , Loss = {}".format(step, train_steps, loss.item()))
 
     print('Done training.')
+
+    print('Saving Model..')
+    torch.save(model.state_dict(), "visual_model_v0")
+    print("Model saved. Exiting program..")
 ################################################################################
 ################################################################################
 
