@@ -62,9 +62,10 @@ def train(config):
     criterion = nn.MSELoss()
     optimizer = optim.Adam(model.parameters(), lr = learning_rate)
 
-
+    print('Loading data..')
     # get data
     data = np.load('./data/random_rollouts_0_500.npy') # 500 2-tuples (action, observation)
+    print('Getting batches...')
     batches = get_batches(data[:,1], batch_size)
     # store on GPU
     batches = torch.from_numpy(batches).cuda()
@@ -72,6 +73,7 @@ def train(config):
     # loss array
     losses = []
     
+    print('Starting training...')
     for step, batch_input in enumerate(batches):
 
         # set grad to zero
