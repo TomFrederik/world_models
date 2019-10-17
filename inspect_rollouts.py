@@ -1,6 +1,6 @@
 import numpy as np
 
-data = np.load('./data/random_rollouts_0_500.npy', allow_pickle = True)
+data = np.load('/home/tom/data/random_rollouts_0_500.npy', allow_pickle = True)
 
 #print(data)
 #print(data.shape) # (500, 2, 1000)

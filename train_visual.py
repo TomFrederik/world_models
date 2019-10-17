@@ -77,7 +77,7 @@ def train(config):
 
     print('Loading data..')
     # get data
-    data = np.load('./data/random_rollouts_0_500.npy', allow_pickle=True) # 500 2-tuples (action, observation)
+    data = np.load('/home/tom/data/random_rollouts_0_500.npy', allow_pickle=True) # 500 2-tuples (action, observation)
     print('Getting batches...')
     batches = get_batches(data[:,1,:], batch_size)
 
