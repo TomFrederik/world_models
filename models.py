@@ -21,7 +21,7 @@ class Encoder(nn.Module):
         """
 
         # init nn.Module
-        super().__init__(self)
+        super().__init__()
 
         
         self.input_dim = input_dim
@@ -94,7 +94,7 @@ class Decoder(nn.Module):
         """
 
         # init nn.Module
-        super().__init__(self)
+        super().__init__()
 
         # save for later
         self.z_dim = z_dim
