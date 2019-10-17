@@ -1,5 +1,5 @@
 """
-This script samples 10,000 random rollouts on the carracing environment
+This script samples 500 random rollouts on the carracing environment
 """
 
 import gym
@@ -9,12 +9,12 @@ import argparse
 
 def main(id, number_rollouts):
     env = gym.make('CarRacing-v0')
-    env = wrappers.Monitor(env, "./gym_results",force=True)
+
+    #env = wrappers.Monitor(env, "./gym_results",force=True)
    
     rollouts = []
-    counter = 1
 
-    for _ in range(number_rollouts):
+    for counter in range(number_rollouts):
 
         done = False # reset done condition
         obs = env.reset() # reset environment and save inital observation
@@ -23,8 +23,10 @@ def main(id, number_rollouts):
         actions = []
         observations = []
 
+        iter = 1
         while not done:
             # one rollout
+            print('Step number {} in rollout {}'.format(iter, counter+1))
 
             # take random action
             act = env.action_space.sample()
@@ -33,22 +35,28 @@ def main(id, number_rollouts):
             # save action and observation
             actions.append(act)
             observations.append(obs)
-        
+            iter += 1
+
         # save rollout
-        rollouts.append((actions, observations))
+        rollouts.append(np.array([actions, observations]))
         
-        counter += 1
         
         # save progress so far
-        if counter%100 == 0:
-            np.save('random_rollouts_{}.npy'.format(id), rollouts)
+        if (counter + 1) % 100 == 0:
+            np.save('/data/random_rollouts_{}_{}.npy'.format(id, counter+1), rollouts)
     
+        counter += 1
+
     env.close()
 
-    np.save('random_rollouts_{}.npy'.format(id), rollouts)
+    try:
+        np.save('/data/random_rollouts_{}_{}.npy'.format(id, counter+1), rollouts, allow_pickle=True)
+    except:
+        raise ValueError('Save didnt work!')
+
 
 if __name__ == "__main__":
-    
+ 
     # Parse training configuration
     parser = argparse.ArgumentParser()
 
