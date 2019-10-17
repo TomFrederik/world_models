@@ -41,14 +41,14 @@ def main(id, number_rollouts):
         
         # save progress so far
         if (counter + 1) % 100 == 0:
-            np.save('/data/random_rollouts_{}_{}.npy'.format(id, counter+1), rollouts)
+            np.save('/data/random_rollouts_{}_{}.npy'.format(id, counter+1), np.array(rollouts), allow_pickl=True)
     
         counter += 1
 
     env.close()
 
     try:
-        np.save('/data/random_rollouts_{}_{}.npy'.format(id, counter+1), rollouts, allow_pickle=True)
+        np.save('/data/random_rollouts_{}_{}.npy'.format(id, counter+1), np.array(rollouts), allow_pickle=True)
     except:
         raise ValueError('Save didnt work!')
 

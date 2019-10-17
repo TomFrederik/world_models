@@ -21,17 +21,30 @@ from torch.utils.data import DataLoader
 def get_batches(data, batch_size):
     ''' 
     params:
-    data: np array of shape (N, dim_of_image)
+    data: np array of shape (N_rollouts, N_steps) each element is of shape (96,96,3)
     batch_size: int
     
     returns:
     batches: N/batch_size batches of shape (batch_size, dim_of_image)
     '''
 
-    if data.shape[0] % batch_size != 0:
-        # zero pad data
-        data.append(np.zeros((batch_size - (data.shape[0] % batch_size), data.shape[1:])))
+    data = data.flatten()
+    data = np.array([item for item in data])
     
+    # reshape from (N, 96, 96 , 3) to (N, 3, 96, 96)
+    data = np.reshape(data, (data.shape[0], data.shape[-1], data.shape[1], data.shape[2]))
+
+    if data.shape[0] % batch_size != 0:
+        # zero pad data, leads to memory error
+        '''
+        pad_shape = batch_size - (data.shape[0] % batch_size)
+        print((pad_shape,) + data.shape[1:]) # (pad_shape, 96, 96, 3)
+        data = np.append(data, np.zeros((pad_shape,) + data.shape[1:]))
+        '''
+        # drop last x frames
+        drop_shape = data.shape[0] % batch_size
+        data = data[:-drop_shape]
+
     if data.shape[0] % batch_size != 0:
         raise ValueError("Padding didn't work")
 
@@ -64,11 +77,9 @@ def train(config):
 
     print('Loading data..')
     # get data
-    data = np.load('./data/random_rollouts_0_500.npy') # 500 2-tuples (action, observation)
+    data = np.load('./data/random_rollouts_0_500.npy', allow_pickle=True) # 500 2-tuples (action, observation)
     print('Getting batches...')
-    batches = get_batches(data[:,1], batch_size)
-    # store on GPU
-    batches = torch.from_numpy(batches).cuda()
+    batches = get_batches(data[:,1,:], batch_size)
 
     # loss array
     losses = []
@@ -76,6 +87,13 @@ def train(config):
     print('Starting training...')
     for step, batch_input in enumerate(batches):
 
+        # store batches on GPU
+        # make tensor
+        batch_input = torch.from_numpy(batch_input).cuda()
+      
+        # make float
+        batch_input = batch_input.float()
+       
         # set grad to zero
         optimizer.zero_grad()
 
@@ -111,7 +129,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
 
     # Model params
-    parser.add_argument('--input_dim', type=tuple, default=(96,96,3), help='Dimensionality of input picture')
+    parser.add_argument('--input_dim', type=tuple, default=(3,96,96), help='Dimensionality of input picture')
     parser.add_argument('--conv_layers', type=int, default=[[100, 3]], help='List of Conv Layers in the format [[out_0, kernel_size_0], [out_1, kernel_size_1], ...]')
     parser.add_argument('--batch_size', type=int, default=128, help='Number of examples to process in a batch')
     parser.add_argument('--learning_rate', type=float, default=0.001, help='Learning rate')

@@ -29,11 +29,11 @@ class Encoder(nn.Module):
         self.layers = []
         
         # set up chain of Convolutions
-        prev_layer = [len(input_dim), 0]
+        prev_layer = [input_dim[0], 0]
 
         for _, layer in enumerate(layers):
         
-            self.layers.append(nn.Conv3d(prev_layer[0], layer[0], layer[1]))
+            self.layers.append(nn.Conv2d(prev_layer[0], layer[0], layer[1]))
             prev_layer = layer
         
         # final layer are dense layers to compute mean and variance of 
@@ -104,11 +104,11 @@ class Decoder(nn.Module):
         self.layers = []
         
         # set up chain of Convolutions
-        next_layer = [len(input_dim), 0]
+        next_layer = [input_dim[0], 0]
 
         for _, layer in reversed(list(enumerate(layers))):
             
-            self.layers.append(nn.ConvTranspose3d(layer[0], next_layer[0], layer[1]))
+            self.layers.append(nn.ConvTranspose2d(layer[0], next_layer[0], layer[1]))
             next_layer = layer
         
         # reverse list so you can pass through it the correct order during forward pass
