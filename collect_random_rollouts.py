@@ -1,18 +1,33 @@
 """
-This script samples 500 random rollouts on the carracing environment
+This script samples 500 random rollouts on the car racing environment
 """
 
 import gym
 from gym import wrappers
 import numpy as np
 import argparse
+from time import time
+import os
 
-def main(id, number_rollouts):
+def main(config):
+
+    cur_dir = os.path.dirname(__file__)
+
+    data_dir = cur_dir + config.data_path
+
     env = gym.make('CarRacing-v0')
 
     rollouts = []
 
-    for counter in range(number_rollouts):
+    for counter in range(config.nbr_rollouts):
+
+        # reset rollout array to free up space
+        if counter > 0 and counter % config.set_size == 0:
+            id = time()
+            np.save(data_dir + 'random_rollouts_{}.npy'.format(id), np.array(rollouts), allow_pickle=True)
+            rollouts = []
+
+        start_time = time()
 
         done = False # reset done condition
         obs = env.reset() # reset environment and save inital observation
@@ -24,7 +39,7 @@ def main(id, number_rollouts):
         iter = 1
         while not done:
             # one rollout
-            print('Step number {} in rollout {}'.format(iter, counter+1))
+            #print('Step number {} in rollout {}'.format(iter, counter+1))
 
             # take random action
             act = env.action_space.sample()
@@ -35,22 +50,14 @@ def main(id, number_rollouts):
             observations.append(obs)
             iter += 1
 
-        # save rollout
+        # append rollout
         rollouts.append(np.array([actions, observations]))
-        
-        
-        # save progress so far
-        if (counter + 1) % 100 == 0:
-            np.save('/home/tom/data/random_rollouts_{}_{}.npy'.format(id, counter+1), np.array(rollouts), allow_pickl=True)
     
         counter += 1
+        print('This track took {} seconds to simulate.'.format(time()-start_time))
 
     env.close()
 
-    try:
-        np.save('/home/tom/data/random_rollouts_{}_{}.npy'.format(id, counter+1), np.array(rollouts), allow_pickle=True)
-    except:
-        raise ValueError('Save didnt work!')
 
 
 if __name__ == "__main__":
@@ -59,9 +66,10 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
 
     # Model params
-    parser.add_argument('--id', type=int, default=0)
-    parser.add_argument('--number_rollouts', type=int, default=1000)
+    parser.add_argument('--nbr_rollouts', type=int, default=1000)
+    parser.add_argument('--data_path', type=str, default='/data/' )
+    parser.add_argument('--set_size', type=int, default=300)
 
     config = parser.parse_args()
     
-    main(config.id, config.number_rollouts)
+    main(config)
