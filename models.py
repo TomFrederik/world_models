@@ -88,7 +88,6 @@ class Decoder(nn.Module):
         """
         params:
         input_dim: expects a three dimensional array (x_dim, y_dim, channel)
-        batch_size: expects an integer
         layers: list of conv layers = [[in_0, kernel_size_0], [in_1, kernel_size_1], ...]
         z_dim: the dimension of the latent space
         """
@@ -173,9 +172,8 @@ class VAE(nn.Module):
         # sample from this distribution
         # with reparameterization trick
         std = torch.sqrt(z_var) # use some other reparameterization?
-        eps = torch.randn_like(std)
-        # z = eps * std + mean
-        z_sample = eps.mul(std).add_(z_mean) 
+        eps = torch.randn_like(std) # samples from N(mu=0,std=1)
+        z_sample = eps.mul(std).add_(z_mean) # z = eps * std + mean
 
         # decoding step
         prediction = self.decoder(z_sample)

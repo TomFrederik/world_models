@@ -2,20 +2,23 @@
 In this script we train the visual world model.
 """
 
+# torch modules
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
+from torch.utils.data import DataLoader
 
-import models
-
+# other ptyhon modules
 import argparse
 import time
 from datetime import datetime
 import numpy as np
 
-import torch
-from torch.utils.data import DataLoader
+# my modules
+import models
+
+
 
 
 def get_batches(data, batch_size):
@@ -62,7 +65,10 @@ def train(config):
     batch_size = config.batch_size
     learning_rate = config.learning_rate
     train_steps = config.train_steps
-    device = torch.device(config.device)
+    if torch.cuda.is_available():
+        device = 'cuda:0'
+    else:
+        device = 'cpu'
 
 
     # set up model
@@ -130,11 +136,10 @@ if __name__ == "__main__":
 
     # Model params
     parser.add_argument('--input_dim', type=tuple, default=(3,96,96), help='Dimensionality of input picture')
-    parser.add_argument('--conv_layers', type=int, default=[[100, 3]], help='List of Conv Layers in the format [[out_0, kernel_size_0], [out_1, kernel_size_1], ...]')
+    parser.add_argument('--conv_layers', type=int, default=[[100, 3], [100,3]], help='List of Conv Layers in the format [[out_0, kernel_size_0], [out_1, kernel_size_1], ...]')
     parser.add_argument('--batch_size', type=int, default=128, help='Number of examples to process in a batch')
-    parser.add_argument('--learning_rate', type=float, default=0.001, help='Learning rate')
+    parser.add_argument('--learning_rate', type=float, default=1e-3, help='Learning rate')
     parser.add_argument('--train_steps', type=int, default=10000, help='Number of training steps')
-    parser.add_argument('--device', type=str, default="cuda:0", help="Training device 'cpu' or 'cuda:0'")
     parser.add_argument('--latent_dim', type=int, default=32, help="Dimension of the latent space")
 
     config = parser.parse_args()
