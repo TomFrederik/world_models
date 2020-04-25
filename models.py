@@ -33,7 +33,7 @@ class Encoder(nn.Module):
 
         for _, layer in enumerate(layers):
         
-            self.layers.append(nn.Conv2d(prev_layer[0], layer[0], layer[1]))
+            self.layers.append(nn.Conv2d(prev_layer[0], layer[0], layer[1], stride=2))
             prev_layer = layer
         
 
@@ -110,7 +110,7 @@ class Decoder(nn.Module):
 
         for _, layer in reversed(list(enumerate(layers))):
             
-            self.layers.append(nn.ConvTranspose2d(layer[0], next_layer[0], layer[1]))
+            self.layers.append(nn.ConvTranspose2d(layer[0], next_layer[0], layer[1], stride=2))
             next_layer = layer
         
         # reverse list so you can pass through it the correct order during forward pass
@@ -152,11 +152,11 @@ class Decoder(nn.Module):
         hidden = torch.reshape(hidden, (hidden.shape[0], 10, 92, 92))
 
         # pass hidden through all convolutions
-        for i, layer in enumerate(self.layers):
+        for i, layer in enumerate(self.layers[:-1]):
             hidden = F.relu(layer(hidden))
 
 
-        out = hidden
+        out = F.sigmoid(hidden)
         
         return out
 
