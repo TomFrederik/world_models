@@ -139,10 +139,15 @@ def train(config):
                     writer.add_scalar('training loss',
                                 running_loss / 10,
                                 epoch * batches.shape[0] + file_run_ctr + step)
-                    print('At epoch {0:5d}, step {1:5d}, the loss is {2:4.10f}'.format(epoch+1, step+1, running_loss/10))
+                    print('At epoch {0:5d}, step {1:5d}, the loss is {2:4.10f}'.format(epoch+1, epoch * batches.shape[0] + file_run_ctr + step+1, running_loss/10))
                     running_loss = 0
         
-        file_run_ctr += batches*epochs
+        # inc step counter across files
+        file_run_ctr += batches.shape[0]*epochs
+        
+        #free memory for next file
+        del data
+        del batches
 
     print('Done training.')
 
