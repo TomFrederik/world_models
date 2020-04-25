@@ -39,8 +39,8 @@ class Encoder(nn.Module):
 
         # final layer are dense layers to compute mean and variance of 
         # multivariate gaussian
-        self.mu = nn.Linear(84640, z_dim, bias = True)
-        self.var = nn.Linear(84640, z_dim, bias = True)
+        self.mu = nn.Linear(4096, z_dim, bias = True)
+        self.var = nn.Linear(4096, z_dim, bias = True)
     
         # initialize weights
         for layer in self.layers:
@@ -74,7 +74,7 @@ class Encoder(nn.Module):
                 hidden = F.relu(self.layers[0](x))
                 continue
             hidden = F.relu(layer(hidden))
-
+        # print(hidden.shape)
         # flatten
         hidden = torch.flatten(hidden, start_dim=1)
 
@@ -117,7 +117,7 @@ class Decoder(nn.Module):
         self.layers.reverse()
 
         # first layer is a dense layer to convert latent space 
-        self.linear = nn.Linear(z_dim, 84640, bias=True)
+        self.linear = nn.Linear(z_dim, 4096, bias=True)
     
         # initialize weights
         for layer in self.layers:
@@ -149,7 +149,7 @@ class Decoder(nn.Module):
         hidden = F.relu(self.linear(x))
 
         # reshape
-        hidden = torch.reshape(hidden, (hidden.shape[0], 10, 92, 92))
+        hidden = torch.reshape(hidden, (hidden.shape[0], 32, 64, 4, 4))
 
         # pass hidden through all convolutions
         for i, layer in enumerate(self.layers[:-1]):

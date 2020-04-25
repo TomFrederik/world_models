@@ -80,7 +80,7 @@ def train(config):
     # init crit and optim
     criterion = nn.MSELoss()
     optimizer = optim.Adam(model.parameters(), lr = learning_rate)
-    optim.lr_scheduler.StepLR(optimizer, step_size=500, gamma=0.1)
+    optim.lr_scheduler.StepLR(optimizer, step_size=500, gamma=0.5)
 
     # get data
     print('Loading data..')
