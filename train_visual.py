@@ -8,17 +8,18 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
 from torch.utils.data import DataLoader
+from torch.utils.tensorboard import SummaryWriter
+
 
 # other ptyhon modules
 import argparse
-import time
+from time import time
 from datetime import datetime
 import numpy as np
+import os
 
 # my modules
 import models
-
-
 
 
 def get_batches(data, batch_size):
@@ -38,22 +39,16 @@ def get_batches(data, batch_size):
     data = np.reshape(data, (data.shape[0], data.shape[-1], data.shape[1], data.shape[2]))
 
     if data.shape[0] % batch_size != 0:
-        # zero pad data, leads to memory error
-        '''
-        pad_shape = batch_size - (data.shape[0] % batch_size)
-        print((pad_shape,) + data.shape[1:]) # (pad_shape, 96, 96, 3)
-        data = np.append(data, np.zeros((pad_shape,) + data.shape[1:]))
-        '''
         # drop last x frames
-        drop_shape = data.shape[0] % batch_size
-        data = data[:-drop_shape]
+        drop_n = data.shape[0] % batch_size
+        data = data[:-drop_n]
 
     if data.shape[0] % batch_size != 0:
-        raise ValueError("Padding didn't work")
+        raise ValueError("Dropping didn't work")
 
     batches = np.split(data, data.shape[0]/batch_size)
 
-    return np.array(batches)
+    return batches
 
 
 def train(config):
@@ -64,67 +59,93 @@ def train(config):
     z_dim = config.latent_dim
     batch_size = config.batch_size
     learning_rate = config.learning_rate
-    train_steps = config.train_steps
+    epochs = config.epochs
     if torch.cuda.is_available():
         device = 'cuda:0'
     else:
         device = 'cpu'
 
+    cur_dir = os.path.dirname(os.path.realpath(__file__))
+
+    id_str = 'visual_epochs_{}_lr_{}_time{}'.format(epochs, learning_rate, time())
+    
+    writer = SummaryWriter(cur_dir + config.model_dir + id)
 
     # set up model
     encoder = models.Encoder(input_dim, conv_layers, z_dim)
     # not sure if I somehow have to change dimensions of the conv layers here
     decoder = models.Decoder(input_dim, conv_layers, z_dim)
-    model = models.VAE(encoder, decoder).cuda()
+    model = models.VAE(encoder, decoder).to(device)
 
     # init crit and optim
     criterion = nn.MSELoss()
     optimizer = optim.Adam(model.parameters(), lr = learning_rate)
 
-    print('Loading data..')
     # get data
-    data = np.load('/home/tom/data/random_rollouts_0_500.npy', allow_pickle=True) # 500 2-tuples (action, observation)
-    print('Getting batches...')
-    batches = get_batches(data[:,1,:], batch_size)
+    print('Loading data..')
+    data_dir = cur_dir + '/data/'
+    (_,_,files) = os.walk(data_dir).__next__()
 
-    # loss array
-    losses = []
+    files = [data_dir + file for file in files]
+
+    # test with first file
+    data = np.load(files[0], allow_pickle = True)
+    
+    
+    print('Getting batches...')
+    batches = np.array(get_batches(data[:,1,:], batch_size)) # only look at observations
+    # shape is e.g. (781, 128, 3, 96, 96) = (nbr_batches, batch_size, C_in, H, W)
     
     print('Starting training...')
-    for step, batch_input in enumerate(batches):
+    log_ctr = 0
+    running_loss = 0
 
-        # store batches on GPU
-        # make tensor
-        batch_input = torch.from_numpy(batch_input).cuda()
-      
-        # make float
-        batch_input = batch_input.float()
-       
-        # set grad to zero
-        optimizer.zero_grad()
+    for epoch in range(epochs):
+        
+        for step, batch_input in enumerate(batches):
+            
+            # store batches on GPU
+            # make tensor
+            batch_input = torch.from_numpy(batch_input).to(device)
+        
+            # make float
+            batch_input = batch_input.float()
+        
+            # set grad to zero
+            optimizer.zero_grad()
 
-        # forward pass
-        batch_output = model.forward(batch_input)
+            # forward pass
+            batch_output = model.forward(batch_input)
 
-        # compute loss
-        loss = criterion(batch_output, batch_input)
+            # compute loss
+            loss = criterion(batch_output, batch_input)
 
-        # backward pass
-        loss.backward()
+            # backward pass
+            loss.backward()
 
-        # updating weights
-        optimizer.step()
+            # updating weights
+            optimizer.step()
 
-        # log the losses
-        losses.append(loss.item())
+            ###
+            # logging
+            ###
+            running_loss += loss.item()
 
-        if step % 100 == 0:
-            print("Train step {}/{} , Loss = {}".format(step, train_steps, loss.item()))
+            # inc log counter
+            log_ctr += 1
+        
+            if log_ctr % 10 == 0:
+                # log the losses
+                writer.add_scalar('training loss',
+                            running_loss / 10,
+                            epoch * batches.shape[0] + step)
+                print('At epoch {0:5d}, step {1:5d}, the loss is {2:4.10f}'.format(epoch+1, step+1, running_loss/10))
+                running_loss = 0
 
     print('Done training.')
 
     print('Saving Model..')
-    torch.save(model.state_dict(), "visual_model_v0")
+    torch.save(model.state_dict(), cur_dir + config.model_dir + id_str + '.pt')
     print("Model saved. Exiting program..")
 ################################################################################
 ################################################################################
@@ -136,11 +157,13 @@ if __name__ == "__main__":
 
     # Model params
     parser.add_argument('--input_dim', type=tuple, default=(3,96,96), help='Dimensionality of input picture')
-    parser.add_argument('--conv_layers', type=int, default=[[100, 3], [100,3]], help='List of Conv Layers in the format [[out_0, kernel_size_0], [out_1, kernel_size_1], ...]')
-    parser.add_argument('--batch_size', type=int, default=128, help='Number of examples to process in a batch')
+    parser.add_argument('--conv_layers', type=int, default=[[10, 3], [10,3]], help='List of Conv Layers in the format [[out_0, kernel_size_0], [out_1, kernel_size_1], ...]')
+    parser.add_argument('--batch_size', type=int, default=64, help='Number of examples to process in a batch')
     parser.add_argument('--learning_rate', type=float, default=1e-3, help='Learning rate')
-    parser.add_argument('--train_steps', type=int, default=10000, help='Number of training steps')
+    parser.add_argument('--epochs', type=int, default=2, help='Number of epochs')
     parser.add_argument('--latent_dim', type=int, default=32, help="Dimension of the latent space")
+    parser.add_argument('--model_dir', type=str, default='/models/', help="Relative directory for saving models")
+    
 
     config = parser.parse_args()
 

@@ -11,10 +11,10 @@ import os
 
 def main(config):
 
-    cur_dir = os.path.dirname(__file__)
+    cur_dir = os.path.dirname(os.path.realpath(__file__))
 
     data_dir = cur_dir + config.data_path
-
+    
     env = gym.make('CarRacing-v0')
 
     rollouts = []
@@ -69,7 +69,7 @@ if __name__ == "__main__":
     # Model params
     parser.add_argument('--nbr_rollouts', type=int, default=1000)
     parser.add_argument('--data_path', type=str, default='/data/' )
-    parser.add_argument('--set_size', type=int, default=300)
+    parser.add_argument('--set_size', type=int, default=100)
 
     config = parser.parse_args()
     

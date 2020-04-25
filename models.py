@@ -36,16 +36,17 @@ class Encoder(nn.Module):
             self.layers.append(nn.Conv2d(prev_layer[0], layer[0], layer[1]))
             prev_layer = layer
         
+
         # final layer are dense layers to compute mean and variance of 
         # multivariate gaussian
-        self.mu = nn.Linear(layers[-1][0], z_dim, bias = True)
-        self.var = nn.Linear(layers[-1][0], z_dim, bias = True)
+        self.mu = nn.Linear(84640, z_dim, bias = True)
+        self.var = nn.Linear(84640, z_dim, bias = True)
     
         # initialize weights
         for layer in self.layers:
-            nn.init.xavier_uniform(layer.weight)
-        nn.init.xavier_uniform(self.mu.weight)
-        nn.init.xavier_uniform(self.var.weight)
+            nn.init.xavier_uniform_(layer.weight)
+        nn.init.xavier_uniform_(self.mu.weight)
+        nn.init.xavier_uniform_(self.var.weight)
 
 
         # convert to torch list
@@ -62,10 +63,9 @@ class Encoder(nn.Module):
         parameterization of the latent space
         """
 
-        if x.shape[1:] != self.input_dim:
-            print("Input is of dimension {}, expected {}".format(x.shape[1:], self.input_dim))
+        if tuple(list(x.shape[1:]))  != self.input_dim:
+            print("Input is of dimension {}, expected {}".format(tuple(list(x.shape[1:])) , self.input__dim))
             raise ValueError
-
         
         # pass x through all convolutions
         # activation is relu
@@ -74,10 +74,13 @@ class Encoder(nn.Module):
                 hidden = F.relu(self.layers[0](x))
                 continue
             hidden = F.relu(layer(hidden))
-        
+
+        # flatten
+        hidden = torch.flatten(hidden, start_dim=1)
+
         # compute mean and variance of z:
         z_mean = self.mu(hidden)
-        z_var = self.var(hidden)
+        z_var = F.relu(self.var(hidden))
 
         return z_mean, z_var
 
@@ -114,12 +117,12 @@ class Decoder(nn.Module):
         self.layers.reverse()
 
         # first layer is a dense layer to convert latent space 
-        self.linear = nn.Linear(z_dim, layers[0][0], bias=True)
+        self.linear = nn.Linear(z_dim, 84640, bias=True)
     
         # initialize weights
         for layer in self.layers:
-            nn.init.xavier_uniform(layer.weight)
-        nn.init.xavier_uniform(self.linear.weight)
+            nn.init.xavier_uniform_(layer.weight)
+        nn.init.xavier_uniform_(self.linear.weight)
 
         # convert to torch list
         self.layers = nn.ModuleList(self.layers)
@@ -136,14 +139,17 @@ class Decoder(nn.Module):
         
         """
 
-        if x.shape[1:] != self.z_dim:
-            print("Input is of dimension {}, expected {}".format(x.shape[1:], self.z_dim))
+        if list(x.shape[1:])[0]  != self.z_dim:
+            print("Input is of dimension {}, expected {}".format(list(x.shape[1:])[0] , self.z_dim))
             raise ValueError
 
         
         # pass x through linear layer
         # activation is relu
         hidden = F.relu(self.linear(x))
+
+        # reshape
+        hidden = torch.reshape(hidden, (hidden.shape[0], 10, 92, 92))
 
         # pass hidden through all convolutions
         for i, layer in enumerate(self.layers):
@@ -168,7 +174,6 @@ class VAE(nn.Module):
         # encoding step
 
         z_mean, z_var = self.encoder(x)
-
         # sample from this distribution
         # with reparameterization trick
         std = torch.sqrt(z_var) # use some other reparameterization?
