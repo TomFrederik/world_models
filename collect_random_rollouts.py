@@ -57,6 +57,10 @@ def main(config):
         print('Generated {} tracks so far'.format(counter))
         print('This track took {} seconds to simulate.'.format(time()-start_time))
 
+    if len(rollouts)>0:
+        id = time()
+        np.save(data_dir + 'random_rollouts_{}.npy'.format(id), np.array(rollouts), allow_pickle=True)
+
     env.close()
 
 

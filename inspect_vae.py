@@ -8,7 +8,6 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
 from torch.utils.data import DataLoader
-from torch.utils.tensorboard import SummaryWriter
 
 
 # other ptyhon modules
@@ -53,13 +52,13 @@ def main(config):
     model = models.VAE(encoder, decoder).to(device)
     
     # load model
-    model.load_state_dict(torch.load(model_dir + model_files[0]))
+    model.load_state_dict(torch.load(model_dir + model_files[0], map_location=torch.device(device)))
 
     # load data
-    data = np.load(data_dir + data_files[1], allow_pickle=True)
+    data = np.load(data_dir + data_files[0], allow_pickle=True)
 
     # get one image
-    image = data[0,1,0]
+    image = data[0,1,20]
     input_img = torch.from_numpy(np.reshape(image, (1,3,96,96))).to(device)
     input_img = input_img.float()
     out_image = model(input_img).cpu().detach().numpy()
@@ -68,11 +67,12 @@ def main(config):
     # plot images
     plt.figure(1)
     plt.imshow(image)
-    plt.savefig('input_img.pdf')
+    plt.savefig(cur_dir + '/input_img.pdf')
+    print("here")
 
     plt.figure(2)
     plt.imshow(out_image)
-    plt.savefig('output_img.pdf')
+    plt.savefig(cur_dir + '/output_img.pdf')
     
 
 if __name__ == "__main__":
