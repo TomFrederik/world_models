@@ -54,6 +54,7 @@ def main(config):
         rollouts.append(np.array([actions, observations]))
     
         counter += 1
+        print('Generated {} tracks so far'.format(counter))
         print('This track took {} seconds to simulate.'.format(time()-start_time))
 
     env.close()
