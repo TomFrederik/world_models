@@ -69,7 +69,7 @@ def train(config):
 
     id_str = 'visual_epochs_{}_lr_{}_time{}'.format(epochs, learning_rate, time())
     
-    writer = SummaryWriter(cur_dir + config.model_dir + id)
+    writer = SummaryWriter(cur_dir + config.model_dir + id_str)
 
     # set up model
     encoder = models.Encoder(input_dim, conv_layers, z_dim)
@@ -96,7 +96,7 @@ def train(config):
     for file_idx, file in enumerate(files):
         
         data = np.load(file, allow_pickle = True)
-        print('Getting batches of file {}...'.format(file_idx))
+        print('Getting batches of file {}...'.format(file_idx+1))
         batches = np.array(get_batches(data[:,1,:], batch_size)) # only look at observations
         # shape is e.g. (781, 128, 3, 96, 96) = (nbr_batches, batch_size, C_in, H, W)
 
@@ -160,7 +160,7 @@ if __name__ == "__main__":
     # Model params
     parser.add_argument('--input_dim', type=tuple, default=(3,96,96), help='Dimensionality of input picture')
     parser.add_argument('--conv_layers', type=int, default=[[10, 3], [10,3]], help='List of Conv Layers in the format [[out_0, kernel_size_0], [out_1, kernel_size_1], ...]')
-    parser.add_argument('--batch_size', type=int, default=64, help='Number of examples to process in a batch')
+    parser.add_argument('--batch_size', type=int, default=128, help='Number of examples to process in a batch')
     parser.add_argument('--learning_rate', type=float, default=1e-3, help='Learning rate')
     parser.add_argument('--epochs', type=int, default=2, help='Number of epochs')
     parser.add_argument('--latent_dim', type=int, default=32, help="Dimension of the latent space")
