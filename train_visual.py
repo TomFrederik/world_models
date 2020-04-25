@@ -88,59 +88,61 @@ def train(config):
 
     files = [data_dir + file for file in files]
 
-    # test with first file
-    data = np.load(files[0], allow_pickle = True)
-    
-    
-    print('Getting batches...')
-    batches = np.array(get_batches(data[:,1,:], batch_size)) # only look at observations
-    # shape is e.g. (781, 128, 3, 96, 96) = (nbr_batches, batch_size, C_in, H, W)
-    
     print('Starting training...')
     log_ctr = 0
     running_loss = 0
+    file_run_ctr = 0
 
-    for epoch in range(epochs):
+    for file_idx, file in enumerate(files):
         
-        for step, batch_input in enumerate(batches):
+        data = np.load(file, allow_pickle = True)
+        print('Getting batches of file {}...'.format(file_idx))
+        batches = np.array(get_batches(data[:,1,:], batch_size)) # only look at observations
+        # shape is e.g. (781, 128, 3, 96, 96) = (nbr_batches, batch_size, C_in, H, W)
+
+        for epoch in range(epochs):
             
-            # store batches on GPU
-            # make tensor
-            batch_input = torch.from_numpy(batch_input).to(device)
+            for step, batch_input in enumerate(batches):
+                
+                # store batches on GPU
+                # make tensor
+                batch_input = torch.from_numpy(batch_input).to(device)
+            
+                # make float
+                batch_input = batch_input.float()
+            
+                # set grad to zero
+                optimizer.zero_grad()
+
+                # forward pass
+                batch_output = model.forward(batch_input)
+
+                # compute loss
+                loss = criterion(batch_output, batch_input)
+
+                # backward pass
+                loss.backward()
+
+                # updating weights
+                optimizer.step()
+
+                ###
+                # logging
+                ###
+                running_loss += loss.item()
+
+                # inc log counter
+                log_ctr += 1
+            
+                if log_ctr % 10 == 0:
+                    # log the losses
+                    writer.add_scalar('training loss',
+                                running_loss / 10,
+                                epoch * batches.shape[0] + file_run_ctr + step)
+                    print('At epoch {0:5d}, step {1:5d}, the loss is {2:4.10f}'.format(epoch+1, step+1, running_loss/10))
+                    running_loss = 0
         
-            # make float
-            batch_input = batch_input.float()
-        
-            # set grad to zero
-            optimizer.zero_grad()
-
-            # forward pass
-            batch_output = model.forward(batch_input)
-
-            # compute loss
-            loss = criterion(batch_output, batch_input)
-
-            # backward pass
-            loss.backward()
-
-            # updating weights
-            optimizer.step()
-
-            ###
-            # logging
-            ###
-            running_loss += loss.item()
-
-            # inc log counter
-            log_ctr += 1
-        
-            if log_ctr % 10 == 0:
-                # log the losses
-                writer.add_scalar('training loss',
-                            running_loss / 10,
-                            epoch * batches.shape[0] + step)
-                print('At epoch {0:5d}, step {1:5d}, the loss is {2:4.10f}'.format(epoch+1, step+1, running_loss/10))
-                running_loss = 0
+        file_run_ctr += batches*epochs
 
     print('Done training.')
 
