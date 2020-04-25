@@ -80,6 +80,7 @@ def train(config):
     # init crit and optim
     criterion = nn.MSELoss()
     optimizer = optim.Adam(model.parameters(), lr = learning_rate)
+    optim.lr_scheduler.StepLR(optimizer, step_size=500, gamma=0.1)
 
     # get data
     print('Loading data..')
@@ -125,6 +126,9 @@ def train(config):
 
                 # updating weights
                 optimizer.step()
+                
+                # update lr
+                scheduler.step()
 
                 ###
                 # logging
@@ -164,10 +168,10 @@ if __name__ == "__main__":
 
     # Model params
     parser.add_argument('--input_dim', type=tuple, default=(3,96,96), help='Dimensionality of input picture')
-    parser.add_argument('--conv_layers', type=int, default=[[10, 3], [10,3]], help='List of Conv Layers in the format [[out_0, kernel_size_0], [out_1, kernel_size_1], ...]')
+    parser.add_argument('--conv_layers', type=int, default=[[10, 3], [10,3], [10,3]], help='List of Conv Layers in the format [[out_0, kernel_size_0], [out_1, kernel_size_1], ...]')
     parser.add_argument('--batch_size', type=int, default=128, help='Number of examples to process in a batch')
     parser.add_argument('--learning_rate', type=float, default=1e-3, help='Learning rate')
-    parser.add_argument('--epochs', type=int, default=2, help='Number of epochs')
+    parser.add_argument('--epochs', type=int, default=3, help='Number of epochs')
     parser.add_argument('--latent_dim', type=int, default=32, help="Dimension of the latent space")
     parser.add_argument('--model_dir', type=str, default='/models/', help="Relative directory for saving models")
     
