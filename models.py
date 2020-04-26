@@ -153,7 +153,7 @@ class Decoder(nn.Module):
         for i, layer in enumerate(self.layers):
             hidden = F.relu(layer(hidden))
 
-        out = torch.sigmoid(hidden) * 255
+        out = torch.sigmoid(hidden)
         #print(out)
         return out
 

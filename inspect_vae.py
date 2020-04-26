@@ -61,7 +61,7 @@ def main(config):
     input_img = torch.from_numpy(np.reshape(image, (1,3,96,96))).to(device)
     input_img = input_img.float()
     out_image = model(input_img).cpu()
-    out_image = out_image.type(torch.IntTensor).detach().numpy()
+    out_image = out_image.detach().numpy()
     out_image = np.reshape(out_image, (96,96,3))
     print(out_image)
 
