@@ -192,7 +192,7 @@ class MDN_RNN(nn.Module):
         self.lstm = nn.LSTM(input_size=input_dim, hidden_size=lstm_units, num_layers=lstm_layers)
 
 
-    
+
     def forward(input):
 
         pass
