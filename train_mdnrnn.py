@@ -19,10 +19,10 @@ import numpy as np
 import os
 
 # my modules
-import models
+import modules
 
 
-def get_batches(data, batch_size):
+def get_obs_batches(data, batch_size):
     ''' 
     params:
     data: np array of shape (N_rollouts, N_steps) each element is of shape (96,96,3)
@@ -50,6 +50,18 @@ def get_batches(data, batch_size):
 
     return batches
 
+def get_act_batches(data, batch_size):
+    ''' 
+    params:
+    data: np array of shape (N_rollouts, N_steps) each element is of shape (1)
+    batch_size: int
+    
+    returns:
+    batches: N/batch_size batches of shape (batch_size, 1)
+    '''
+    print(data.shape)
+    raise NotImplementedError
+
 
 def train(config):
 
@@ -68,20 +80,24 @@ def train(config):
 
     cur_dir = os.path.dirname(os.path.realpath(__file__))
 
-    id_str = 'visual_epochs_{}_lr_{}_time{}'.format(epochs, learning_rate, time())
+    id_str = 'mdnrnn_epochs_{}_lr_{}_time{}'.format(epochs, learning_rate, time())
     
     writer = SummaryWriter(cur_dir + config.model_dir + id_str)
 
     # set up model
-    encoder = models.Encoder(input_dim, conv_layers, z_dim)
+    encoder = modules.Encoder(input_dim, conv_layers, z_dim)
     # not sure if I somehow have to change dimensions of the conv layers here
-    decoder = models.Decoder(input_dim, deconv_layers, z_dim)
-    model = models.VAE(encoder, decoder).to(device)
+    decoder = modules.Decoder(input_dim, deconv_layers, z_dim)
+    model = modules.VAE(encoder, decoder).to(device)
+    
+    # load model
+    model_file = 'visual_epochs_1_lr_0.001_time1587912855.6904068.pt'
+    model.load_state_dict(torch.load(model_dir + model_file, map_location=torch.device(device)))
 
     # init crit and optim
     criterion = nn.MSELoss()
     optimizer = optim.Adam(model.parameters(), lr = learning_rate)
-    scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=1000, gamma=0.5)
+    #scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=1000, gamma=0.5)
 
     # get data
     print('Loading data..')
@@ -99,8 +115,10 @@ def train(config):
         
         data = np.load(file, allow_pickle = True)
         print('Getting batches of file {}...'.format(file_idx+1))
-        batches = np.array(get_batches(data[:,1,:], batch_size)) # only look at observations
-        # shape is e.g. (781, 128, 3, 96, 96) = (nbr_batches, batch_size, C_in, H, W)
+        # shape of obs_batches is e.g. (781, 128, 3, 96, 96) = (nbr_batches, batch_size, C_in, H, W)
+        obs_batches = np.array(get_obs_batches(data[:,1,:], batch_size)) # only look at observations
+        act_batches = np.array(get_acf_batches(data[:,0,:], batch_size)) # only look at actions
+        
 
         for epoch in range(epochs):
             
@@ -188,7 +206,6 @@ if __name__ == "__main__":
     parser.add_argument('--latent_dim', type=int, default=32, help="Dimension of the latent space")
     parser.add_argument('--model_dir', type=str, default='/models/', help="Relative directory for saving models")
     
-
     config = parser.parse_args()
 
     # Train the model

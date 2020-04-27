@@ -19,7 +19,7 @@ import os
 import matplotlib.pyplot as plt
 
 # my modules
-import models
+import modules
 
 
 def main(config):

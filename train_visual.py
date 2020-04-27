@@ -19,7 +19,7 @@ import numpy as np
 import os
 
 # my modules
-import models
+import modules
 
 
 def get_batches(data, batch_size):
