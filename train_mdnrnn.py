@@ -140,20 +140,18 @@ def train(config):
     else:
         device = 'cpu'
 
+    sched_steps = 50
+
     cur_dir = os.path.dirname(os.path.realpath(__file__))
     model_dir = cur_dir + config.model_dir
 
-    id_str = 'mdnrnn_epochs_{}_lr_{}_time_{}'.format(epochs, learning_rate, time())
+    id_str = 'mdnrnn_epochs_{}_lr_{}_layers_{}_schedsteps_{}_time_{}'.format(epochs, learning_rate, len(mdn_layers), sched_steps, time())
     
     writer = SummaryWriter(model_dir + id_str)
 
     # set up mdn model
     mdn_params = {'input_dim':z_dim+3, 'lstm_units':lstm_units, 'lstm_layers':lstm_layers, 'nbr_gauss':nbr_gauss, 'mdn_layers':mdn_layers, 'temp':temp}
     mdn_model = modules.MDN_RNN(**mdn_params).to(device)
-
-    # init optim
-    optimizer = optim.Adam(mdn_model.parameters(), lr = learning_rate)
-    #scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=1000, gamma=0.5)
 
     # get data
     print('Loading data..')
@@ -171,9 +169,16 @@ def train(config):
     file_idx = 0
 
     for obs_file, ac_file in zip(enc_files,ac_files):
+
+        # (re-)init optimizer and scheduler
+        optimizer = optim.Adam(mdn_model.parameters(), lr = learning_rate)
+        scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=sched_steps, gamma=0.5)
+
+        # fetch data
+        print('Getting batches of file {}...'.format(file_idx+1))
+
         obs_data = np.load(obs_file, allow_pickle=True)
         ac_data = np.load(ac_file, allow_pickle = True)[:,0,:]
-        print('Getting batches of file {}...'.format(file_idx+1))
         obs_batches = np.array(get_obs_batches(obs_data, batch_size)) # only look at observations
         act_batches = np.array(get_act_batches(ac_data, batch_size)) # only look at actions
         batches = np.append(obs_batches, act_batches, axis=-1) # is of shape (nbr_batches, batch_size, nbr_frames, z_dim+ac_dim)
@@ -207,7 +212,7 @@ def train(config):
                 optimizer.step()
                 
                 # update lr
-                #scheduler.step()
+                scheduler.step()
 
                 ###
                 # logging
@@ -251,10 +256,10 @@ if __name__ == "__main__":
     parser.add_argument('--lstm_layers', type=int, default=1, help='Number of layers in the LSTM')
     parser.add_argument('--lstm_units', type=int, default=256, help='Number of LSTM units per layer')
     parser.add_argument('--nbr_gauss', type=int, default=5, help='Number of gaussians for MDN')
-    parser.add_argument('--mdn_layers', type=int, default=[100,100], help='List of layers in the MDN')
+    parser.add_argument('--mdn_layers', type=int, default=[50,50,50,50,50], help='List of layers in the MDN')
     parser.add_argument('--temp', type=float, default=1, help='Temperature for mixture model')
     parser.add_argument('--batch_size', type=int, default=10, help='Number of examples to process in a batch')
-    parser.add_argument('--learning_rate', type=float, default=1e-3, help='Learning rate')
+    parser.add_argument('--learning_rate', type=float, default=3e-3, help='Learning rate')
     parser.add_argument('--epochs', type=int, default=20, help='Number of epochs')
     parser.add_argument('--latent_dim', type=int, default=32, help="Dimension of the latent space")
     parser.add_argument('--model_dir', type=str, default='/models/', help="Relative directory for saving models")
