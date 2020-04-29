@@ -199,7 +199,7 @@ def train(config):
 
                 # compute loss
                 loss = mdn_loss(input=batch_input, target=batch_input[:,1:,:32], coeff=coeff, mean=mean, var=var)
-
+                print(loss.item())
                 # backward pass
                 loss.backward()
 
@@ -233,7 +233,7 @@ def train(config):
 
         # save progress so far
         print('Saving Model..')
-        torch.save(model.state_dict(), cur_dir + config.model_dir + id_str + '.pt')
+        torch.save(mdn_model.state_dict(), cur_dir + config.model_dir + id_str + '.pt')
         print("Model saved.")
         file_idx += 1
 
