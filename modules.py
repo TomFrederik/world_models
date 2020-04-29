@@ -160,12 +160,14 @@ class Decoder(nn.Module):
 
 class VAE(nn.Module):
 
-    def __init__(self, encoder, decoder):
+    def __init__(self, encoder, decoder, encode_only=False):
         super().__init__()
+
+        self.encode_only = encode_only
 
         self.encoder = encoder
         self.decoder = decoder
-    
+
     def forward(self, x):
         
         # encoding step
@@ -177,17 +179,20 @@ class VAE(nn.Module):
         eps = torch.randn_like(std) # samples from N(mu=0,std=1)
         z_sample = eps.mul(std).add_(z_mean) # z = eps * std + mean
 
-        # decoding step
-        prediction = self.decoder(z_sample)
+        if self.encode_only:
+            return z_sample
+        else:
+            # decoding step
+            prediction = self.decoder(z_sample)
 
-        return prediction
+            return prediction
 
 class MDN(nn.Module):
 
-    def __init__(self, input_dim=256, layers=[100,100], nbr_gauss=5, temp=1, out_dim=32):
+    def __init__(self, input_dim=256+32, layers=[100,100], nbr_gauss=5, temp=1, out_dim=32):
 
-        if temp<=0 or temp>1:
-            raise ValueError('temperature parameter needs to be in (0,1], but is {}'.format(temp))
+        if temp<=0:
+            raise ValueError('temperature parameter needs to be larger than 0, but is {}'.format(temp))
 
         super(MDN, self).__init__()
 
@@ -209,81 +214,119 @@ class MDN(nn.Module):
             nn.init.xavier_uniform_(layer.weight)
 
 
-    def forward(input):
-        
-        print('MDN Input')
-        print(input.shape)
+    def forward(self, input):
+
+        if input.is_cuda:
+            device = 'cuda:0'
+        else:
+            device = 'cpu'
+
+        #print('MDN Input')
+        #print(input.shape)
 
         # pass through linear layers
         hidden = input
-
         for i in range(len(self.layers)-1):
             hidden = F.relu(self.layers[i].forward(hidden))
-        
+        hidden = self.layers[-1](hidden)
+
         # predict gaussians with temperature modulation
         coeff  = F.softmax(hidden[:,:self.nbr_gauss] / self.temp, dim=1) # mixture coefficients
         var  = torch.exp(hidden[:,self.nbr_gauss:2*self.nbr_gauss]) * self.temp # variances
+        #print('var 1')
+        #print(var)
+        '''
+        dummy = torch.zeros((var.shape[0],self.nbr_gauss, self.nbr_gauss))
+        for i in range(var.shape[0]):
+            dummy[i] = torch.diag(var[i])
+        var = dummy
+        del dummy
+        #print('var 2')
+        #print(var)
+        '''
         mean  = hidden[:,2*self.nbr_gauss:] # means
-        std = torch.sqrt(var)
-
-        # sample index of mixture component
-        components = torch.multinomial(coeff, num_samples=1, replacement=True)
-        print(components.shape)
-        print(components)
-        raise NotImplementedError
-
-        # sample from the corresponding gaussian
-        samples = torch.normal(mean=mean, std=std)
-        print(samples)
-        print(samples.shape)
-        raise NotImplementedError
-
-        return samples
+        mean = torch.reshape(mean, (mean.shape[0], self.nbr_gauss, mean.shape[1]//self.nbr_gauss)) # e.g. (10,5,32)
+        
+        return coeff, mean, var
 
 class MDN_RNN(nn.Module):
     
-    def __init__(self, input_dim=32, lstm_units=256, lstm_layers=1, nbr_gauss=5, mdn_layers=[100,100], temp=1):
+    def __init__(self, input_dim=32+3, lstm_units=256, lstm_layers=1, nbr_gauss=5, mdn_layers=[100,100], temp=1):
 
-        if temp<=0 or temp>1:
-            raise ValueError('temperature parameter needs to be in (0,1], but is {}'.format(temp))
+        if temp<=0:
+            raise ValueError('temperature parameter needs to be larger than 0, but is {}'.format(temp))
 
         super(MDN_RNN, self).__init__()
 
+        self.nbr_gauss = nbr_gauss
+
         self.lstm = nn.LSTM(input_size=input_dim, hidden_size=lstm_units, num_layers=lstm_layers, batch_first=True)
 
-        # input is [h_t, a_t, z_t], output is z_t+1
-        self.mdn = MDN(input_dim=lstm_units+input_dim+1, layers=mdn_layers, nbr_gauss=nbr_gauss, temp=temp, out_dim=input_dim)
+        # input is [h_t, a_t, z_t], output is z_t
+        self.mdn = MDN(input_dim=lstm_units, layers=mdn_layers, nbr_gauss=nbr_gauss, temp=temp, out_dim=input_dim-3)
 
 
 
-    def forward(input):
+    def forward(self, input):
 
-        print('MDN_RNN Input')
-        print(input)
-        print(input.shape) # should be (batch_size, seq_len, z_dim+1)
-        
-        seq_len = input.shape[1]
+        #print('MDN_RNN Input')
+        # print(input.shape) # should be (batch_size, seq_len, z_dim+3), checks out
 
-        z_preds = torch.zeros((*input.shape[:-1], input.shape[-1]-1))
+        if input.is_cuda:
+            device = 'cuda:0'
+        else:
+            device = 'cpu'
 
-        for t in range(seq_len):
-            if t = 0:
-                out_t, (h_t, c_t) = self.lstm(input[:,t:,:])
+        coeff_preds = torch.zeros((input.shape[0], input.shape[1]-1, self.nbr_gauss)).to(device)
+        mean_preds = torch.zeros((input.shape[0], input.shape[1]-1, self.nbr_gauss, input.shape[-1]-3)).to(device)
+        var_preds = torch.zeros((input.shape[0], input.shape[1]-1, self.nbr_gauss)).to(device)
+
+        for t in range(input.shape[1]-1):
+            if t == 0:
+                out_t, (h_t, c_t) = self.lstm(torch.unsqueeze(input[:,t,:], dim=1))
             else:
-                out_t, (h_t, c_t) = self.lstm(input[:,t:,:], (h_t, c_t))
+                out_t, (h_t, c_t) = self.lstm(torch.unsqueeze(input[:,t,:], dim=1), (h_t, c_t))
             
-            # predict z_t
-            z_pred_t = self.mdn(h_t)
+            # predict distribution
+            coeff_pred, mean_pred, var_pred = self.mdn(torch.squeeze(h_t))
 
-            # get a_t and z_t
-            a_t = input[:,t,0]
-            z_t = input[:,t,1:]
+            # save distribution
+            coeff_preds[:,t,:] = coeff_pred
+            mean_preds[:,t,:,:] = mean_pred
+            var_preds[:,t,:] = var_pred
 
-            # cat h_t, a_t, z_t to new input
-            h_t = torch.cat([h_t, a_t, z_t], dim = 1)
+        return coeff_preds, mean_preds, var_preds
 
-            # save z_pred_t
-            z_preds[:,t,:] = z_pred_t
 
+class Controller(nn.Module):
+
+    def __init__(self, in_dim=256+32, layers=[], ac_dim=3):
+
+        super(Controller, self).__init__()
+
+        if len(layers) == 0:
+            self.layers = [nn.Linear(in_dim, ac_dim)]
+        else:
+            prev_layer = in_dim
+            self.layers = []
+            for i in range(len(layers)):
+                self.layers.append(nn.Linear(prev_layer, layers[i]))
+                prev_layer = layers[i]
+            self.layers.append(prev_layer, ac_dim)
         
-        return z_preds
+        self.layers = nn.ModuleList(self.layers)
+    
+        # initialize weights
+        for layer in self.layers:
+            nn.init.xavier_uniform_(layer.weight)
+
+
+    def forward(self, input):
+
+        hidden = input
+
+        for layer in self.layers[-1]:
+            hidden = F.relu(layer(hidden))
+        out = F.tanh(self.layers[-1](hidden))
+
+        return out

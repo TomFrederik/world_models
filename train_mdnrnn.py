@@ -21,23 +21,62 @@ import os
 # my modules
 import modules
 
+# constants
+PI = 3.14159265359
+
+def mdn_loss(input, target, coeff, mean, var):
+
+    bs = input.shape[0] #batch size
+    #print('var 3')
+    #print(var[0,0])
+    # inverse covariance matrix, is diagonal so is simple
+    inv_var = 1/var
+
+    # copy target to process for all kernels at the same time
+    dummy = torch.zeros_like(mean)
+    for i in range(dummy.shape[2]):
+        dummy[:,:,i,:] = target
+    target = dummy
+    del dummy
+
+    # compute gaussians
+    diff_sq = (target - mean)**2
+    #print('diff_sq:',diff_sq, diff_sq.shape)
+    exponent = -0.5 * inv_var**64 * torch.sum(diff_sq, dim=-1) 
+    #print('exponent')
+    #print(exponent)
+    #print(exponent.shape)
+    
+    #print('inv var')
+    #print(inv_var, inv_var.shape)
+    gaussian = 1/((2*PI)**16) * inv_var**32 * torch.exp(exponent)
+    #print('gaussian')
+    #print(gaussian)
+    #print(gaussian.shape)
+    # multiply by coefficients and sum over all gaussians
+    likelihood = torch.sum(coeff * gaussian, dim=-1) # shape is now (batch_size, seq_len)
+    log_likelihood = -1*torch.log(likelihood)
+    #print('log_likelihood')
+    #print(log_likelihood)
+    #print(log_likelihood.shape)
+    
+    # now average over all data points
+    loss = torch.mean(log_likelihood)
+
+    return loss
+    
 
 def get_obs_batches(data, batch_size):
     ''' 
     params:
-    data: np array of shape (N_rollouts, N_steps) each element is of shape (96,96,3)
+    data: np array of shape (N_rollouts, N_steps, 32)
     batch_size: int
     
     returns:
-    batches: N/batch_size batches of shape (batch_size, dim_of_image)
+    batches: N/batch_size batches of shape (batch_size, 32)
     '''
 
-    data = data.flatten()
-    data = np.array([item for item in data])
-    
-    # reshape from (N, 96, 96 , 3) to (N, 3, 96, 96)
-    data = np.reshape(data, (data.shape[0], data.shape[-1], data.shape[1], data.shape[2]))
-
+    # drop last x runs to make it divisable by batch_size
     if data.shape[0] % batch_size != 0:
         # drop last x frames
         drop_n = data.shape[0] % batch_size
@@ -53,23 +92,46 @@ def get_obs_batches(data, batch_size):
 def get_act_batches(data, batch_size):
     ''' 
     params:
-    data: np array of shape (N_rollouts, N_steps) each element is of shape (1)
+    data: np array of shape (N_rollouts, N_steps) each element is a list of shape (3)
     batch_size: int
     
     returns:
-    batches: N/batch_size batches of shape (batch_size, 1)
+    batches: N/batch_size batches of shape (batch_size, 3)
     '''
-    print(data.shape)
-    raise NotImplementedError
+
+    # reshape (N, 1000) array with lists of 3 to (N, 1000, 3) array
+    new_data = np.zeros((*data.shape, 3))
+    
+    for i in range(data.shape[0]):
+        for j in range(data.shape[1]):
+            new_data[i,j] = data[i][j]
+    
+    data = new_data
+    del new_data
+
+    # drop last x runs to make it divisable by batch_size
+    if data.shape[0] % batch_size != 0:
+        # drop last x frames
+        drop_n = data.shape[0] % batch_size
+        data = data[:-drop_n]
+
+    if data.shape[0] % batch_size != 0:
+        raise ValueError("Dropping didn't work")
+
+    batches = np.split(data, data.shape[0]/batch_size)
+
+    return batches
 
 
 def train(config):
 
     # get arguments
-    input_dim = config.input_dim
-    conv_layers = config.conv_layers
-    deconv_layers = config.deconv_layers
     z_dim = config.latent_dim
+    lstm_units = config.lstm_units
+    lstm_layers = config.lstm_layers
+    mdn_layers = config.mdn_layers
+    nbr_gauss = config.nbr_gauss
+    temp = config.temp
     batch_size = config.batch_size
     learning_rate = config.learning_rate
     epochs = config.epochs
@@ -79,72 +141,64 @@ def train(config):
         device = 'cpu'
 
     cur_dir = os.path.dirname(os.path.realpath(__file__))
+    model_dir = cur_dir + config.model_dir
 
-    id_str = 'mdnrnn_epochs_{}_lr_{}_time{}'.format(epochs, learning_rate, time())
+    id_str = 'mdnrnn_epochs_{}_lr_{}_time_{}'.format(epochs, learning_rate, time())
     
-    writer = SummaryWriter(cur_dir + config.model_dir + id_str)
+    writer = SummaryWriter(model_dir + id_str)
 
-    # set up model
-    encoder = modules.Encoder(input_dim, conv_layers, z_dim)
-    # not sure if I somehow have to change dimensions of the conv layers here
-    decoder = modules.Decoder(input_dim, deconv_layers, z_dim)
-    model = modules.VAE(encoder, decoder).to(device)
-    
-    # load model
-    model_file = 'visual_epochs_1_lr_0.001_time1587912855.6904068.pt'
-    model.load_state_dict(torch.load(model_dir + model_file, map_location=torch.device(device)))
+    # set up mdn model
+    mdn_params = {'input_dim':z_dim+3, 'lstm_units':lstm_units, 'lstm_layers':lstm_layers, 'nbr_gauss':nbr_gauss, 'mdn_layers':mdn_layers, 'temp':temp}
+    mdn_model = modules.MDN_RNN(**mdn_params).to(device)
 
-    # init crit and optim
-    criterion = nn.MSELoss()
-    optimizer = optim.Adam(model.parameters(), lr = learning_rate)
+    # init optim
+    optimizer = optim.Adam(mdn_model.parameters(), lr = learning_rate)
     #scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=1000, gamma=0.5)
 
     # get data
     print('Loading data..')
-    data_dir = cur_dir + '/data/'
-    (_,_,files) = os.walk(data_dir).__next__()
+    ac_dir = cur_dir + '/data/'
+    enc_dir = cur_dir + '/enc_data/'
+    (_,_,ac_files) = os.walk(ac_dir).__next__()
 
-    files = [data_dir + file for file in files]
+    enc_files = [enc_dir + 'encoded_images_' + str(i) + '.npy' for i in range(len(ac_files))]
+    ac_files = [ac_dir + file for file in ac_files]
 
     print('Starting training...')
     log_ctr = 0
     running_loss = 0
     file_run_ctr = 0
+    file_idx = 0
 
-    for file_idx, file in enumerate(files):
-        
-        data = np.load(file, allow_pickle = True)
+    for obs_file, ac_file in zip(enc_files,ac_files):
+        obs_data = np.load(obs_file, allow_pickle=True)
+        ac_data = np.load(ac_file, allow_pickle = True)[:,0,:]
         print('Getting batches of file {}...'.format(file_idx+1))
-        # shape of obs_batches is e.g. (781, 128, 3, 96, 96) = (nbr_batches, batch_size, C_in, H, W)
-        obs_batches = np.array(get_obs_batches(data[:,1,:], batch_size)) # only look at observations
-        act_batches = np.array(get_acf_batches(data[:,0,:], batch_size)) # only look at actions
+        obs_batches = np.array(get_obs_batches(obs_data, batch_size)) # only look at observations
+        act_batches = np.array(get_act_batches(ac_data, batch_size)) # only look at actions
+        batches = np.append(obs_batches, act_batches, axis=-1) # is of shape (nbr_batches, batch_size, nbr_frames, z_dim+ac_dim)
         
+        # free up memory
+        del obs_batches
+        del act_batches
+        del obs_data
+        del ac_data
 
         for epoch in range(epochs):
             
             for step, batch_input in enumerate(batches):
                 
-                # store batches on GPU
-                # make tensor
-                batch_input = torch.from_numpy(batch_input).to(device)
-            
-                # make float
-                batch_input = batch_input.float()
-
-                # normalize from 0..255 to 0..1
-                batch_input = batch_input / 255
+                # make batch tensor and float
+                batch_input = torch.from_numpy(batch_input).float().to(device)
             
                 # set grad to zero
                 optimizer.zero_grad()
 
                 # forward pass
-                batch_output = model.forward(batch_input)
+                coeff, mean, var = mdn_model.forward(batch_input)
 
                 # compute loss
-                loss = criterion(batch_output, batch_input)
-                #print(batch_input)
-                #print(batch_output)
-                #print(loss.item())
+                loss = mdn_loss(input=batch_input, target=batch_input[:,1:,:32], coeff=coeff, mean=mean, var=var)
 
                 # backward pass
                 loss.backward()
@@ -153,7 +207,7 @@ def train(config):
                 optimizer.step()
                 
                 # update lr
-                scheduler.step()
+                #scheduler.step()
 
                 ###
                 # logging
@@ -175,13 +229,13 @@ def train(config):
         file_run_ctr += batches.shape[0]*epochs
         
         #free memory for next file
-        del data
         del batches
 
         # save progress so far
         print('Saving Model..')
         torch.save(model.state_dict(), cur_dir + config.model_dir + id_str + '.pt')
         print("Model saved.")
+        file_idx += 1
 
     print('Done training.')
     print('Exiting program..')
@@ -194,13 +248,12 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
 
     # Model params
-    parser.add_argument('--input_dim', type=tuple, default=(3,96,96), help='Dimensionality of input picture')
-    parser.add_argument('--conv_layers', type=int, default=[[32, 4], [64,4], [128,4], [256,4]], help='List of Conv Layers in the format [[out_0, kernel_size_0], [out_1, kernel_size_1], ...]')
-    parser.add_argument('--deconv_layers', type=int, default=[[128, 4], [64,4], [32,4], [8,4], [3,6]], help='List of Deconv Layers in the format [[out_0, kernel_size_0], [out_1, kernel_size_1], ...]')
     parser.add_argument('--lstm_layers', type=int, default=1, help='Number of layers in the LSTM')
     parser.add_argument('--lstm_units', type=int, default=256, help='Number of LSTM units per layer')
     parser.add_argument('--nbr_gauss', type=int, default=5, help='Number of gaussians for MDN')
-    parser.add_argument('--batch_size', type=int, default=256, help='Number of examples to process in a batch')
+    parser.add_argument('--mdn_layers', type=int, default=[100,100], help='List of layers in the MDN')
+    parser.add_argument('--temp', type=float, default=1, help='Temperature for mixture model')
+    parser.add_argument('--batch_size', type=int, default=10, help='Number of examples to process in a batch')
     parser.add_argument('--learning_rate', type=float, default=1e-3, help='Learning rate')
     parser.add_argument('--epochs', type=int, default=20, help='Number of epochs')
     parser.add_argument('--latent_dim', type=int, default=32, help="Dimension of the latent space")
