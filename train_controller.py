@@ -38,7 +38,6 @@ def train(config):
     mdn_layers = config.mdn_layers
     nbr_gauss = config.nbr_gauss
     temp = config.temp
-    batch_size = config.batch_size
     learning_rate = config.learning_rate
     epochs = config.epochs
     if torch.cuda.is_available():
@@ -55,7 +54,6 @@ def train(config):
 
     # set up visual model
     encoder = modules.Encoder(input_dim, conv_layers, z_dim)
-    # not sure if I somehow have to change dimensions of the conv layers here
     decoder = modules.Decoder(input_dim, deconv_layers, z_dim)
     vis_model = modules.VAE(encoder, decoder).to(device)
     
@@ -66,18 +64,22 @@ def train(config):
     # load mdn model
     mdn_params = {'input_dim':z_dim, 'lstm_units':lstm_units, 'lstm_layers':lstm_layers, 'nbr_gauss':nbr_gauss, 'mdn_layers':mdn_layers, 'temp':temp}
     mdn_model = modules.MDN_RNN(**mdn_params)
-    mdn_model_file = ''
+    mdn_model_file = 'mdnrnn_epochs_20_lr_0.001_time_1588164635.2709353.pt'
     mdn_model.load_state_dict(torch.load(model_dir + mdn_model_file, map_location=torch.device(device)))
 
-    # init crit and optim
-    criterion = $$$
-    optimizer = optim.Adam(mdn_model.parameters(), lr = learning_rate)
-    #scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=1000, gamma=0.5)
+    # set up controller model
+    controller = modules.Controller(in_dim=256+32, layers=[], ac_dim=3)
+
+    # set up environment
+    env = gym.make('CarRacing-v0')
+
+    model = spinup.ppo_pytorch()
 
     print('Starting training...')
     log_ctr = 0
     running_loss = 0
     file_run_ctr = 0
+
 
     
 ################################################################################
