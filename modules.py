@@ -80,7 +80,7 @@ class Encoder(nn.Module):
         #print(hidden)
         # compute mean and variance of z:
         z_mean = self.mu(hidden)
-        z_var =  F.relu(self.var(hidden))
+        z_var =  torch.exp(self.var(hidden))
         #print(z_mean)
         #print(z_var)
 
@@ -179,13 +179,17 @@ class VAE(nn.Module):
         eps = torch.randn_like(std) # samples from N(mu=0,std=1)
         z_sample = eps.mul(std).add_(z_mean) # z = eps * std + mean
 
+        # get KL loss
+        kl_loss = -0.5 - torch.log(std) + (std**2 + z_mean**2)/2
+        kl_loss = torch.sum(kl_loss) # sum over whole batch at once
+        
         if self.encode_only:
-            return z_sample
+            return z_sample, kl_loss
         else:
             # decoding step
             prediction = self.decoder(z_sample)
 
-            return prediction
+            return prediction, kl_loss 
 
 class MDN(nn.Module):
 

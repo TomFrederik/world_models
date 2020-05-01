@@ -107,16 +107,15 @@ def main(config):
     data_dir = cur_dir + '/data/'
     (_,_,files) = os.walk(data_dir).__next__()
 
-    files = [data_dir + file for file in data_files]
+    files = sorted([data_dir + file for file in data_files])
 
     print('Starting run...')
 
     for file_idx, file in enumerate(files):
         
-        file_out = np.zeros((100, 1000, z_dim))
-
-        data = np.load(file, allow_pickle = True)[:,1,:]
         print('Getting batches of file {}...'.format(file_idx+1))
+        file_out = np.zeros((100, 1000, z_dim))
+        data = np.load(file, allow_pickle = True)[:,1,:]
         # shape of batches is e.g. (781, 128, 3, 96, 96) = (nbr_batches, batch_size, C_in, H, W)
         batches = np.array(get_obs_batches(data, batch_size)) # only look at observations
 
@@ -136,7 +135,7 @@ def main(config):
             batch_input = batch_input / 255
 
             # forward pass
-            batch_output = model.forward(batch_input)
+            batch_outpu, _ = model.forward(batch_input)
 
             run_id = (step*batch_size) // 1000
             frame_in_run = (step*batch_size) % 1000

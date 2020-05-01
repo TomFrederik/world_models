@@ -68,21 +68,23 @@ def train(config):
 
     cur_dir = os.path.dirname(os.path.realpath(__file__))
 
-    id_str = 'visual_epochs_{}_lr_{}_time{}'.format(epochs, learning_rate, time())
+    id_str = 'visual_epochs_{}_lr_{}'.format(epochs, learning_rate)
+
+    start_time = int(time.time())
     
     writer = SummaryWriter(cur_dir + config.model_dir + id_str)
 
     # set up model
-    encoder = models.Encoder(input_dim, conv_layers, z_dim)
+    encoder = modules.Encoder(input_dim, conv_layers, z_dim)
     # not sure if I somehow have to change dimensions of the conv layers here
-    decoder = models.Decoder(input_dim, deconv_layers, z_dim)
-    model = models.VAE(encoder, decoder).to(device)
+    decoder = modules.Decoder(input_dim, deconv_layers, z_dim)
+    model = modules.VAE(encoder, decoder).to(device)
 
-    # init crit and optim
-    criterion = nn.MSELoss()
+    # (re-)init crit and optim
     optimizer = optim.Adam(model.parameters(), lr = learning_rate)
-    scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=500, gamma=0.2)
-
+    scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=400, gamma=0.3)
+    criterion = nn.MSELoss()
+    
     # get data
     print('Loading data..')
     data_dir = cur_dir + '/data/'
@@ -102,6 +104,9 @@ def train(config):
         batches = np.array(get_batches(data[:,1,:], batch_size)) # only look at observations
         # shape is e.g. (781, 128, 3, 96, 96) = (nbr_batches, batch_size, C_in, H, W)
 
+        
+
+
         for epoch in range(epochs):
             
             for step, batch_input in enumerate(batches):
@@ -120,10 +125,10 @@ def train(config):
                 optimizer.zero_grad()
 
                 # forward pass
-                batch_output = model.forward(batch_input)
+                batch_output, kl_loss = model.forward(batch_input)
 
                 # compute loss
-                loss = criterion(batch_output, batch_input)
+                loss = criterion(batch_output, batch_input) + kl_loss
                 #print(batch_input)
                 #print(batch_output)
                 #print(loss.item())
@@ -162,7 +167,7 @@ def train(config):
 
         # save progress so far
         print('Saving Model..')
-        torch.save(model.state_dict(), cur_dir + config.model_dir + id_str + '.pt')
+        torch.save(model.state_dict(), cur_dir + config.model_dir + id_str + '/{}.pt'.format(start_time)
         print("Model saved.")
 
     print('Done training.')

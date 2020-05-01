@@ -140,18 +140,27 @@ def train(config):
     else:
         device = 'cpu'
 
-    sched_steps = 50
+    sched_steps = 100
 
     cur_dir = os.path.dirname(os.path.realpath(__file__))
     model_dir = cur_dir + config.model_dir
 
-    id_str = 'mdnrnn_epochs_{}_lr_{}_layers_{}_schedsteps_{}_time_{}'.format(epochs, learning_rate, len(mdn_layers), sched_steps, time())
+    layer_str = ''
+    for i in range(len(mdn_layers)):
+        layer_str += str(mdn_layers[i])+'_'
+
+
+    id_str = 'mdnrnn_epochs_{}_lr_{}_layers_{}schedsteps_{}'.format(epochs, learning_rate, layer_str, sched_steps, time())
     
     writer = SummaryWriter(model_dir + id_str)
 
     # set up mdn model
     mdn_params = {'input_dim':z_dim+3, 'lstm_units':lstm_units, 'lstm_layers':lstm_layers, 'nbr_gauss':nbr_gauss, 'mdn_layers':mdn_layers, 'temp':temp}
     mdn_model = modules.MDN_RNN(**mdn_params).to(device)
+
+    # init optimizer and scheduler
+    optimizer = optim.Adam(mdn_model.parameters(), lr = learning_rate)
+    scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=sched_steps, gamma=0.95)
 
     # get data
     print('Loading data..')
@@ -160,7 +169,7 @@ def train(config):
     (_,_,ac_files) = os.walk(ac_dir).__next__()
 
     enc_files = [enc_dir + 'encoded_images_' + str(i) + '.npy' for i in range(len(ac_files))]
-    ac_files = [ac_dir + file for file in ac_files]
+    ac_files = sorted([ac_dir + file for file in ac_files])
 
     print('Starting training...')
     log_ctr = 0
@@ -169,10 +178,6 @@ def train(config):
     file_idx = 0
 
     for obs_file, ac_file in zip(enc_files,ac_files):
-
-        # (re-)init optimizer and scheduler
-        optimizer = optim.Adam(mdn_model.parameters(), lr = learning_rate)
-        scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=sched_steps, gamma=0.5)
 
         # fetch data
         print('Getting batches of file {}...'.format(file_idx+1))
@@ -256,10 +261,10 @@ if __name__ == "__main__":
     parser.add_argument('--lstm_layers', type=int, default=1, help='Number of layers in the LSTM')
     parser.add_argument('--lstm_units', type=int, default=256, help='Number of LSTM units per layer')
     parser.add_argument('--nbr_gauss', type=int, default=5, help='Number of gaussians for MDN')
-    parser.add_argument('--mdn_layers', type=int, default=[50,50,50,50,50], help='List of layers in the MDN')
+    parser.add_argument('--mdn_layers', type=int, default=[100,100,50,50], help='List of layers in the MDN')
     parser.add_argument('--temp', type=float, default=1, help='Temperature for mixture model')
     parser.add_argument('--batch_size', type=int, default=10, help='Number of examples to process in a batch')
-    parser.add_argument('--learning_rate', type=float, default=3e-3, help='Learning rate')
+    parser.add_argument('--learning_rate', type=float, default=1e-3, help='Learning rate')
     parser.add_argument('--epochs', type=int, default=20, help='Number of epochs')
     parser.add_argument('--latent_dim', type=int, default=32, help="Dimension of the latent space")
     parser.add_argument('--model_dir', type=str, default='/models/', help="Relative directory for saving models")

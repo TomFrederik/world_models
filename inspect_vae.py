@@ -45,12 +45,12 @@ def main(config):
     (_,_,data_files) = os.walk(data_dir).__next__()
 
     # set up model
-    encoder = models.Encoder(input_dim, conv_layers, z_dim)
+    encoder = modules.Encoder(input_dim, conv_layers, z_dim)
     # not sure if I somehow have to change dimensions of the conv layers here
-    decoder = models.Decoder(input_dim, deconv_layers, z_dim)
-    model = models.VAE(encoder, decoder).to(device)
+    decoder = modules.Decoder(input_dim, deconv_layers, z_dim)
+    model = modules.VAE(encoder, decoder).to(device)
     
-    model_file = 'visual_epochs_1_lr_0.001_time1587912855.6904068.pt' #model_files[0]
+    model_file = 'visual_epochs_1_lr_0.001.pt' #model_files[0]
     # load model
     model.load_state_dict(torch.load(model_dir + model_file, map_location=torch.device(device)))
 
@@ -62,8 +62,8 @@ def main(config):
     input_img = torch.from_numpy(np.reshape(image, (1,3,96,96))).to(device)
     input_img = input_img.float()
     input_img = input_img / 255
-    out_image = model(input_img).cpu()
-    out_image = out_image.detach().numpy()
+    out_image, _= model(input_img)
+    out_image = out_image.cpu().detach().numpy()
     out_image = np.reshape(out_image, (96,96,3))
     #print(out_image)
 
