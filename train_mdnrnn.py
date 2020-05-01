@@ -150,7 +150,7 @@ def train(config):
         layer_str += str(mdn_layers[i])+'_'
 
 
-    id_str = 'mdnrnn_epochs_{}_lr_{}_layers_{}schedsteps_{}'.format(epochs, learning_rate, layer_str, sched_steps, time())
+    id_str = 'mdnrnn_epochs_{}_lr_{}_layers_{}temp_{}_schedsteps_{}'.format(epochs, learning_rate, layer_str, config.temp, sched_steps, time())
     
     writer = SummaryWriter(model_dir + id_str)
 

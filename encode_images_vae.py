@@ -96,7 +96,7 @@ def main(config):
     model = modules.VAE(encoder, decoder, encode_only=True).to(device)
     
     # load model
-    model_file = 'visual_epochs_1_lr_0.001_time1587912855.6904068.pt' #model_files[0]
+    model_file = 'visual_epochs_1_lr_0.001.pt' #model_files[0]
     model.load_state_dict(torch.load(model_dir + model_file, map_location=torch.device(device)))
 
     # set to eval mode
@@ -135,7 +135,7 @@ def main(config):
             batch_input = batch_input / 255
 
             # forward pass
-            batch_outpu, _ = model.forward(batch_input)
+            batch_output, _ = model.forward(batch_input)
 
             run_id = (step*batch_size) // 1000
             frame_in_run = (step*batch_size) % 1000

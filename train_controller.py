@@ -1,5 +1,5 @@
 """
-In this script we train the visual world model.
+In this script we train the controller model.
 """
 
 # torch modules
@@ -28,110 +28,11 @@ import os
 
 # my modules
 import modules
+from CMA_ES import CMA_ES
 
 
 def count_parameters(model):
     return sum(p.numel() for p in model.parameters() if p.requires_grad)
-
-class CMA_ES:
-    
-    def __init__(self, model_class, model_kwargs={}, env_id='CarRacing-v0', num_runs=5, pop_size=10, selection_pressure=0.1):
-        
-        self.model_class = model_class
-        self.model_kwargs = model_kwargs
-        self.env_id = env_id
-        self.num_runs = num_runs
-        self.pop_size = pop_size
-        self.selection_pressure = selection_pressure
-    
-    def
-
-        
-    def fitness(self, pop, model_class, model_kwargs, env_id, num_runs):
-        '''
-        params:
-        env_id - ID for a gym environemnt
-        pop - a population of parameter vectors with shape (pop_size, num_params)
-        model_class - the constructor for an actor model
-        model_kwargs - keyword arguments for the model
-        num_runs - number of rollouts for each parameter vector to average reward
-
-        returns:
-        fitness - fitness values of each parameter vector. Is of shape (pop_size)
-        '''
-        pop_size = pop.shape[0]
-
-        # create environment
-        env = gym.make(env_id)
-
-        # container for fitness values
-        fitness = torch.zeros(pop_size)
-
-        for agent_id in range(pop.shape[0]):
-            agent_params = pop[agent_id,:]
-            model = model_class(model_kwargs)
-            print(model.parameters().data)
-            
-            # set model params to this agent's params
-            model.parameters().data = agent_params
-            
-            for i in range(num_runs):
-                # collect rollouts
-                obs = env.reset
-                action = model(obs)
-                done = False
-                cum_rew = 0
-
-                while not done:
-                    obs, rew, done, _ = env(action)
-                    action = model(obs)
-                    cum_rew += rew
-                
-                fitness[agent_id] += cum_rew / num_runs
-
-
-        return fitness
-
-    def sample(self, mean, covariance, pop_size):
-        '''
-        params:
-        mean - mean vector of shape (n)
-        covariance - covariance matrix of shape (n, n)
-        pop_size - number of parameter vectors that should be sampled
-
-        returns:
-        sample - parameter matrix of shape (pop_size, n)
-        '''
-
-        dist = torch.distributions.multivariate_normal.MultivariateNormal(loc=mean, covariance_matrix=covariance)
-        sample = dist.rsample(sample_shape=torch.Size(pop_size, mean.shape[0]))
-
-    def grim_reaper(self, cur_pop, selection_pressure):
-        '''
-        params:
-        cur_pop - parameter matrix of shape (pop_size, n)
-        selection_pressure - percentage of population that is allowed to survive 
-
-        returns:
-        survivors - parameter matrix of shape (num_survivors, n)
-        '''
-
-        # calculate fitness of each agent
-        pop_fitness = fitness(cur_pop, model_class=$$$)
-
-        # calculate number of survivors
-        num_survivors = int(cur_pop.shape[0] * selection_pressure)
-
-        # get IDs of best agents
-        survivor_ids = torch.argsort(pop_fitness, descending=True)[:num_survivors]
-
-        # return best agents
-        survivors = cur_pop[survivor_ids,:]
-
-        return survivors
-
-
-
 
 def train(config):
 
@@ -148,6 +49,9 @@ def train(config):
     learning_rate = config.learning_rate
     epochs = config.epochs
     pop_size = config.pop_size
+    num_runs_fitness = config.num_runs_fitness
+    selection_pressure = config.selection_pressure
+    ctrl_layers = config.ctrl_layers
 
     if torch.cuda.is_available():
         device = 'cuda:0'
@@ -160,7 +64,7 @@ def train(config):
     cur_dir = os.path.dirname(os.path.realpath(__file__))
     model_dir = cur_dir + config.model_dir
 
-    id_str = 'ctrl_epochs_{}_lr_{}_time_{}'.format(epochs, learning_rate, time())
+    id_str = 'ctrl_epochs_{}_lr_{}_popsize_{}'.format(epochs, learning_rate, pop_size)
     
     writer = SummaryWriter(model_dir + id_str)
 
@@ -184,12 +88,30 @@ def train(config):
     # load mdn model
     mdn_params = {'input_dim':z_dim+3, 'lstm_units':lstm_units, 'lstm_layers':lstm_layers, 'nbr_gauss':nbr_gauss, 'mdn_layers':mdn_layers, 'temp':temp}
     mdn_model = modules.MDN_RNN(**mdn_params)
-    #mdn_model_file = 'mdnrnn_epochs_20_lr_0.003_layers_4_time_1588173769.531019.pt'
-    mdn_model_file = 'mdnrnn_epochs_20_lr_0.003_layers_5_schedsteps_50_time_1588180535.0663602.pt'
+    mdn_model_file = 'mdnrnn_epochs_20_lr_0.001_layers_100_100_50_50_schedsteps_100.pt'
     mdn_model.load_state_dict(torch.load(model_dir + mdn_model_file, map_location=torch.device(device)))
 
-    # set up controller model
-    controller = modules.Controller(in_dim=256+32, layers=[], ac_dim=3).to(ctrl_device)
+    # set up CMA-ES
+    # parameters for control network
+    ctrl_kwargs = {
+        'input_dim':lstm_units+z_dim,
+        'ctrl_layers':ctrl_layers,
+        'ac_dim':3
+    }
+
+    # parameters for CMA
+    CMA_parameters = {
+        'model_class':modules.Controller, 
+        'model_kwargs':{ctrl_kwargs}, 
+        'env_id':'CarRacing-v0', 
+        'num_runs':num_runs_fitness, 
+        'pop_size':pop_size, 
+        'selection_pressure':selection_pressure
+
+    }
+
+    CMA = CMA_ES(CMA_parameters)
+
 
     #print('Parameters in the VAE: ', count_parameters(vis_model))
     #print('Parameters in the MDN_RNN: ', count_parameters(mdn_model))
@@ -222,10 +144,12 @@ if __name__ == "__main__":
     parser.add_argument('--lstm_layers', type=int, default=1, help='Number of layers in the LSTM')
     parser.add_argument('--lstm_units', type=int, default=256, help='Number of LSTM units per layer')
     parser.add_argument('--nbr_gauss', type=int, default=5, help='Number of gaussians for MDN')
-    parser.add_argument('--mdn_layers', type=int, default=[50,50,50,50,50], help='List of layers in the MDN')
+    parser.add_argument('--mdn_layers', type=int, default=[100,100,50,50], help='List of layers in the MDN')
     parser.add_argument('--temp', type=float, default=1, help='Temperature for mixture model')
     parser.add_argument('--ctrl_layers', type=int, default=[], help='List of layers in the Control network')
     parser.add_argument('--pop_size', type=int, default=20, help='Population size for CMA-ES')
+    parser.add_argument('--num_runs_fitness', type=int, default=5, help='Number of rollouts to evaluate fitness')
+    parser.add_argument('--selection_pressure', type=float, default=0.1, help='Percentage of population that survives each iteration')
     parser.add_argument('--batch_size', type=int, default=256, help='Number of examples to process in a batch')
     parser.add_argument('--learning_rate', type=float, default=1e-3, help='Learning rate')
     parser.add_argument('--epochs', type=int, default=20, help='Number of epochs')
