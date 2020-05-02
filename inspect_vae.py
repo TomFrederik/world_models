@@ -84,14 +84,14 @@ def main(config):
     # plot images
     plt.figure(1)
     plt.imshow(image)
-    plt.savefig(cur_dir + '/input_img.pdf')
+    plt.savefig(cur_dir + '/plots/input_img.pdf')
 
     plt.figure(2)
     plt.imshow(out_image)
     if deterministic:
-        plt.savefig(cur_dir + '/deterministic_output_img.pdf')
+        plt.savefig(cur_dir + '/plots/deterministic_output_img.pdf')
     else:
-        plt.savefig(cur_dir + '/variational_output_img.pdf')
+        plt.savefig(cur_dir + '/plots/variational_output_img.pdf')
     
 
 if __name__ == "__main__":

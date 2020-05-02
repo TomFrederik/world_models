@@ -174,7 +174,7 @@ def train(config):
         del data
         del batches
 
-        # save progress so far
+        # save progress so far!
         print('Saving Model..')
         torch.save(model.state_dict(), cur_dir + config.model_dir + id_str + '/{}.pt'.format(start_time))
         print("Model saved.")
