@@ -52,6 +52,7 @@ def train(config):
     num_runs_fitness = config.num_runs_fitness
     selection_pressure = config.selection_pressure
     ctrl_layers = config.ctrl_layers
+    stop_crit = config.stop_crit
 
     if torch.cuda.is_available():
         device = 'cuda:0'
@@ -68,64 +69,63 @@ def train(config):
     
     writer = SummaryWriter(model_dir + id_str)
 
-    ### debugging
-    ###
-
-    fitness(pop = torch.rand((2,867)), model=modules.Controller)
-
-    ###
-    ###
+    print('Setting up world model..')
 
     # set up visual model
     encoder = modules.Encoder(input_dim, conv_layers, z_dim)
     decoder = modules.Decoder(input_dim, deconv_layers, z_dim)
-    vis_model = modules.VAE(encoder, decoder).to(device)
+    vis_model = modules.VAE(encoder, decoder, encode_only=True).to(device)
     
     # load visual model
-    vis_model_file = 'visual_epochs_1_lr_0.001_time1587912855.6904068.pt'
+    vis_model_file = 'visual_epochs_1_lr_0.001.pt'
     vis_model.load_state_dict(torch.load(model_dir + vis_model_file, map_location=torch.device(device)))
-
+    vis_model.eval()
+    
     # load mdn model
     mdn_params = {'input_dim':z_dim+3, 'lstm_units':lstm_units, 'lstm_layers':lstm_layers, 'nbr_gauss':nbr_gauss, 'mdn_layers':mdn_layers, 'temp':temp}
     mdn_model = modules.MDN_RNN(**mdn_params)
     mdn_model_file = 'mdnrnn_epochs_20_lr_0.001_layers_100_100_50_50_schedsteps_100.pt'
     mdn_model.load_state_dict(torch.load(model_dir + mdn_model_file, map_location=torch.device(device)))
+    mdn_model.eval()
 
+    print('Setting up CMA-ES..')
     # set up CMA-ES
     # parameters for control network
     ctrl_kwargs = {
         'input_dim':lstm_units+z_dim,
-        'ctrl_layers':ctrl_layers,
+        'layers':ctrl_layers,
         'ac_dim':3
     }
 
     # parameters for CMA
     CMA_parameters = {
         'model_class':modules.Controller, 
-        'model_kwargs':{ctrl_kwargs}, 
+        'vis_model':vis_model,
+        'mdn_rnn':mdn_model,
+        'model_kwargs':ctrl_kwargs, 
         'env_id':'CarRacing-v0', 
         'num_runs':num_runs_fitness, 
         'pop_size':pop_size, 
         'selection_pressure':selection_pressure
-
     }
 
-    CMA = CMA_ES(CMA_parameters)
+    CMA = CMA_ES(**CMA_parameters)
+    
+    print('Starting training...')
 
+    # train
+    best_parameters = CMA.train(stop_crit=stop_crit)
+    print(best_parameters.shape)
+    print(best_parameters)
+    # save model
+    best_model = modules.Controller(ctrl_kwargs)
+    best_model.parameters().data = best_parameters
+    torch.save(best_model, model_dir + 'controller_{}.pt'.format(int(time())))
 
     #print('Parameters in the VAE: ', count_parameters(vis_model))
     #print('Parameters in the MDN_RNN: ', count_parameters(mdn_model))
     #print('Parameters in the Controller: ', count_parameters(controller))
 
-    raise NotImplementedError
-    # set up environment
-    env = gym.make('CarRacing-v0')
-    
-
-    print('Starting training...')
-    log_ctr = 0
-    running_loss = 0
-    file_run_ctr = 0
 
 
     
@@ -150,6 +150,7 @@ if __name__ == "__main__":
     parser.add_argument('--pop_size', type=int, default=20, help='Population size for CMA-ES')
     parser.add_argument('--num_runs_fitness', type=int, default=5, help='Number of rollouts to evaluate fitness')
     parser.add_argument('--selection_pressure', type=float, default=0.1, help='Percentage of population that survives each iteration')
+    parser.add_argument('--stop_crit', type=int, default=600, help='Average fitness value that needs to be reached')
     parser.add_argument('--batch_size', type=int, default=256, help='Number of examples to process in a batch')
     parser.add_argument('--learning_rate', type=float, default=1e-3, help='Learning rate')
     parser.add_argument('--epochs', type=int, default=20, help='Number of epochs')

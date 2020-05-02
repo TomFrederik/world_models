@@ -14,13 +14,20 @@ from torch.utils.tensorboard import SummaryWriter
 import gym
 from gym import wrappers
 
+# stable baselines
+from stable_baselines.common import make_vec_env
+
+
+# other python packages
+import numpy as np
+
 def count_parameters(model):
     return sum(p.numel() for p in model.parameters() if p.requires_grad)
 
 class CMA_ES:
     
-    def __init__(self, model_class, model_kwargs={}, env_id='CarRacing-v0', num_runs=5, pop_size=20, selection_pressure=0.1):
-        
+    def __init__(self, model_class, vis_model, mdn_rnn, model_kwargs={}, env_id='CarRacing-v0', num_runs=5, pop_size=20, selection_pressure=0.1):
+
         # save params in class instance
         self.model_class = model_class
         self.model_kwargs = model_kwargs
@@ -28,9 +35,16 @@ class CMA_ES:
         self.num_runs = num_runs
         self.pop_size = pop_size
         self.selection_pressure = selection_pressure
+        self.vis_model = vis_model
+        self.mdn_rnn = mdn_rnn
+
+        if next(vis_model.parameters()).is_cuda:
+            self.obs_device = 'cuda:0'
+        else:
+            self.obs_device = 'cpu'
 
         # get number of params
-        dummy_model = model_class(model_kwargs)
+        dummy_model = model_class(**model_kwargs)
         self.num_params = count_parameters(dummy_model)
         del dummy_model
 
@@ -69,7 +83,7 @@ class CMA_ES:
 
             ctr += 1
 
-            if ctr % 10 == 0:
+            if ctr % 1 == 0:
                 print('Just completed step {0:5d}, average fitness of last step was {1:4.3f}'.format(ctr, torch.mean(cur_pop_fitness)))
         
         best_candidate = cur_pop_fitness[torch.argsort(cur_pop_fitness, descending=True)[0]]
@@ -129,32 +143,71 @@ class CMA_ES:
         fitness - fitness values of each parameter vector. Is of shape (pop_size)
         '''
 
-        # create environment
+        # make env
         env = gym.make(self.env_id)
 
         # container for fitness values
         fitness = torch.zeros(self.pop_size)
 
+    
         for agent_id in range(self.pop_size):
+            print('Evaluating {}th agent'.format(agent_id+1))
             agent_params = pop[agent_id,:]
-            model = self.model_class(self.model_kwargs)
-            print(model.parameters().data)
             
+            model = self.model_class(**self.model_kwargs)
+
             # set model params to this agent's params
-            model.parameters().data = agent_params
+            model.layers[-1].weight.data = torch.reshape(agent_params[:864], (3,288))
+            model.layers[-1].bias.data = torch.reshape(agent_params[864:], torch.Size([3]))
+            
+            # create environment
+            vec_env = make_vec_env(self.env_id, n_envs=self.num_runs)
+            vec_obs = vec_env.reset()
+            print(vec_obs)
+            raise NotImplementedError
             
             for i in range(self.num_runs):
                 # collect rollouts
-                obs = env.reset
-                action = model(obs)
+                obs = env.reset()
+                obs = np.reshape(obs, (3,96,96))
+                obs = torch.from_numpy(obs).to(self.obs_device)
+                obs = torch.unsqueeze(obs, dim=0)
+                obs = obs.type(torch.cuda.FloatTensor) / 255
+
+                run_zs = torch.zeros((1,1000,32))
+                run_acs = torch.zeros((1,1000,3))
+
+                vis_out, _ = self.vis_model(obs)
+                #print(vis_out.shape) # [1,32]
+                run_zs[:,0,:] = vis_out
+                mdn_hidden = self.mdn_rnn.intial_state(batch_size=1).to(self.obs_device)
+                mdn_hidden = torch.squeeze(mdn_hidden, dim =0)
+                ctrl_in = torch.cat((vis_out,mdn_hidden), dim=1).to('cpu')
+                action = model(ctrl_in)
+                action = torch.squeeze(action)
+
                 done = False
                 cum_rew = 0
-
+                step = 1
                 while not done:
-                    obs, rew, done, _ = env(action)
-                    action = model(obs)
-                    cum_rew += rew
+                    step += 1
+                    obs, rew, done, _ = env.step(action.detach().numpy())
+                    obs = np.reshape(obs, (3,96,96))
+                    obs = torch.from_numpy(obs).to(self.obs_device)
+                    obs = torch.unsqueeze(obs, dim=0)
+                    obs = obs.type(torch.cuda.FloatTensor) / 255
+
+                    
+                    vis_out,_ = self.vis_model(obs)
                 
+                    mdn_hidden = self.mdn_rnn(torch.cat([run_zs[:,:step,:], run_acs[:,:step,:]], dim=2))  
+                    mdn_hidden = torch.squeeze(mdn_hidden, dim =0).to(self.obs_device)
+                    ctrl_in = torch.cat((vis_out,mdn_hidden), dim=1).to('cpu')
+                    
+                    action = model(ctrl_in)
+                    action = torch.squeeze(action)
+                    cum_rew += rew
+                print('Agent {} achieved {} reward on its {}th run.'.format(agent_id+1, cum_rew, i+1))
                 fitness[agent_id] += cum_rew / self.num_runs
 
 
@@ -169,7 +222,7 @@ class CMA_ES:
         sample - parameter matrix of shape (pop_size, num_params)
         '''
 
-        sample = self.dist.rsample(sample_shape=torch.Size(pop_size, self.num_params))
+        sample = self.dist.rsample(sample_shape=torch.Size([pop_size]))
 
         return sample
 

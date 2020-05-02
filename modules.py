@@ -263,6 +263,8 @@ class MDN_RNN(nn.Module):
         super(MDN_RNN, self).__init__()
 
         self.nbr_gauss = nbr_gauss
+        self.lstm_layers = lstm_layers
+        self.lstm_units = lstm_units
 
         self.lstm = nn.LSTM(input_size=input_dim, hidden_size=lstm_units, num_layers=lstm_layers, batch_first=True)
 
@@ -270,48 +272,64 @@ class MDN_RNN(nn.Module):
         self.mdn = MDN(input_dim=lstm_units, layers=mdn_layers, nbr_gauss=nbr_gauss, temp=temp, out_dim=input_dim-3)
 
 
-
     def forward(self, input):
 
         #print('MDN_RNN Input')
-        # print(input.shape) # should be (batch_size, seq_len, z_dim+3), checks out
+        #print(input.shape) # should be (batch_size, seq_len, z_dim+3), checks out
 
         if input.is_cuda:
             device = 'cuda:0'
         else:
             device = 'cpu'
 
-        coeff_preds = torch.zeros((input.shape[0], input.shape[1]-1, self.nbr_gauss)).to(device)
-        mean_preds = torch.zeros((input.shape[0], input.shape[1]-1, self.nbr_gauss, input.shape[-1]-3)).to(device)
-        var_preds = torch.zeros((input.shape[0], input.shape[1]-1, self.nbr_gauss)).to(device)
+        if self.training:
+            # in training mode, the last prediction is not saved because it can't be checked against a ground truth
+            out_shape = (input.shape[0], input.shape[1]-1, self.nbr_gauss)
+        else:
+            out_shape = (input.shape[0], input.shape[1], self.nbr_gauss)
+            
+        coeff_preds = torch.zeros(out_shape).to(device)
+        mean_preds = torch.zeros((*out_shape, input.shape[-1]-3)).to(device)
+        var_preds = torch.zeros(out_shape).to(device)
+        #print(coeff_preds.shape) # [1,1,5]
+        #print(mean_preds.shape) # [1,1,5,32]
+        #print(var_preds.shape) # [1,1,5]
 
-        for t in range(input.shape[1]-1):
+        for t in range(out_shape[1]):
             if t == 0:
                 out_t, (h_t, c_t) = self.lstm(torch.unsqueeze(input[:,t,:], dim=1))
             else:
                 out_t, (h_t, c_t) = self.lstm(torch.unsqueeze(input[:,t,:], dim=1), (h_t, c_t))
             
             # predict distribution
-            coeff_pred, mean_pred, var_pred = self.mdn(torch.squeeze(h_t))
+            coeff_pred, mean_pred, var_pred = self.mdn(torch.squeeze(h_t, dim=0))
 
             # save distribution
             coeff_preds[:,t,:] = coeff_pred
             mean_preds[:,t,:,:] = mean_pred
             var_preds[:,t,:] = var_pred
+        if self.training:
+            return coeff_preds, mean_preds, var_preds
+        else:
+            return h_t
 
-        return coeff_preds, mean_preds, var_preds
-
+    def intial_state(self, batch_size):
+        '''
+        returns initial state of lstm
+        '''
+        h_0 = torch.zeros((self.lstm_layers,batch_size,self.lstm_units))
+        return h_0
 
 class Controller(nn.Module):
 
-    def __init__(self, in_dim=256+32, layers=[], ac_dim=3):
+    def __init__(self, input_dim=256+32, layers=[], ac_dim=3):
 
         super(Controller, self).__init__()
 
         if len(layers) == 0:
-            self.layers = [nn.Linear(in_dim, ac_dim)]
+            self.layers = [nn.Linear(input_dim, ac_dim)]
         else:
-            prev_layer = in_dim
+            prev_layer = input_dim
             self.layers = []
             for i in range(len(layers)):
                 self.layers.append(nn.Linear(prev_layer, layers[i]))
@@ -326,11 +344,11 @@ class Controller(nn.Module):
 
 
     def forward(self, input):
-
+        
         hidden = input
 
-        for layer in self.layers[-1]:
+        for layer in self.layers[:-1]:
             hidden = F.relu(layer(hidden))
-        out = F.tanh(self.layers[-1](hidden))
+        out = torch.tanh(self.layers[-1](hidden))
 
         return out
