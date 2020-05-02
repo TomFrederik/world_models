@@ -44,15 +44,26 @@ def main(config):
     (_,_,model_files) = os.walk(model_dir).__next__()
     (_,_,data_files) = os.walk(data_dir).__next__()
 
+    # use AE or VAE?
+    deterministic = True
+
     # set up model
-    encoder = modules.Encoder(input_dim, conv_layers, z_dim)
-    # not sure if I somehow have to change dimensions of the conv layers here
-    decoder = modules.Decoder(input_dim, deconv_layers, z_dim)
-    model = modules.VAE(encoder, decoder).to(device)
+    if deterministic:
+        encoder = modules.Det_Encoder(input_dim, conv_layers, z_dim)
+        decoder = modules.Decoder(input_dim, deconv_layers, z_dim)
+        model = modules.AE(encoder, decoder).to(device)
+        model_file = 'deterministic_visual_epochs_1_lr_0.001/1588429888.pt' #model_files[0]
+        # load model
+        model.load_state_dict(torch.load(model_dir + model_file, map_location=torch.device(device)))
+    else:
+        encoder = modules.Encoder(input_dim, conv_layers, z_dim)
+        decoder = modules.Decoder(input_dim, deconv_layers, z_dim)
+        model = modules.VAE(encoder, decoder).to(device)
     
-    model_file = 'visual_epochs_1_lr_0.001.pt' #model_files[0]
-    # load model
-    model.load_state_dict(torch.load(model_dir + model_file, map_location=torch.device(device)))
+    
+        model_file = 'visual_epochs_1_lr_0.001.pt' #model_files[0]
+        # load model
+        model.load_state_dict(torch.load(model_dir + model_file, map_location=torch.device(device)))
 
     # load data
     data = np.load(data_dir + data_files[0], allow_pickle=True)
@@ -74,7 +85,10 @@ def main(config):
 
     plt.figure(2)
     plt.imshow(out_image)
-    plt.savefig(cur_dir + '/output_img.pdf')
+    if deterministic:
+        plt.savefig(cur_dir + '/deterministic_output_img.pdf')
+    else:
+        plt.savefig(cur_dir + '/variational_output_img.pdf')
     
 
 if __name__ == "__main__":

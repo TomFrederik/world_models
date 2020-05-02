@@ -15,11 +15,12 @@ import gym
 from gym import wrappers
 
 # stable baselines
-from stable_baselines.common import make_vec_env
+#from stable_baselines.common import make_vec_env
 
 
 # other python packages
 import numpy as np
+from time import time
 
 def count_parameters(model):
     return sum(p.numel() for p in model.parameters() if p.requires_grad)
@@ -161,10 +162,9 @@ class CMA_ES:
             model.layers[-1].bias.data = torch.reshape(agent_params[864:], torch.Size([3]))
             
             # create environment
-            vec_env = make_vec_env(self.env_id, n_envs=self.num_runs)
-            vec_obs = vec_env.reset()
-            print(vec_obs)
-            raise NotImplementedError
+            #vec_env = make_vec_env(self.env_id, n_envs=self.num_runs)
+            #vec_obs = vec_env.reset()
+            #print(vec_obs)
             
             for i in range(self.num_runs):
                 # collect rollouts
@@ -182,7 +182,7 @@ class CMA_ES:
                 run_zs[:,0,:] = vis_out
                 mdn_hidden = self.mdn_rnn.intial_state(batch_size=1).to(self.obs_device)
                 mdn_hidden = torch.squeeze(mdn_hidden, dim =0)
-                ctrl_in = torch.cat((vis_out,mdn_hidden), dim=1).to('cpu')
+                ctrl_in = torch.cat((vis_out,mdn_hidden), dim=1).to('cuda:0')
                 action = model(ctrl_in)
                 action = torch.squeeze(action)
 
@@ -202,7 +202,7 @@ class CMA_ES:
                 
                     mdn_hidden = self.mdn_rnn(torch.cat([run_zs[:,:step,:], run_acs[:,:step,:]], dim=2))  
                     mdn_hidden = torch.squeeze(mdn_hidden, dim =0).to(self.obs_device)
-                    ctrl_in = torch.cat((vis_out,mdn_hidden), dim=1).to('cpu')
+                    ctrl_in = torch.cat((vis_out,mdn_hidden), dim=1).to('cuda:0')
                     
                     action = model(ctrl_in)
                     action = torch.squeeze(action)

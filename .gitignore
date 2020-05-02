@@ -2,5 +2,5 @@
 *.json
 ./data/*
 data/
-models/
+*.pt
 *.npy

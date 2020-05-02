@@ -67,18 +67,28 @@ def train(config):
         device = 'cpu'
 
     cur_dir = os.path.dirname(os.path.realpath(__file__))
+    
+    # use AE or VAE?
+    deterministic = True
 
-    id_str = 'visual_epochs_{}_lr_{}'.format(epochs, learning_rate)
+    if deterministic:
+        id_str = 'deterministic_visual_epochs_{}_lr_{}'.format(epochs, learning_rate)
+    else:
+        id_str = 'variational_visual_epochs_{}_lr_{}'.format(epochs, learning_rate)
 
-    start_time = int(time.time())
+    start_time = int(time())
     
     writer = SummaryWriter(cur_dir + config.model_dir + id_str)
 
     # set up model
-    encoder = modules.Encoder(input_dim, conv_layers, z_dim)
-    # not sure if I somehow have to change dimensions of the conv layers here
-    decoder = modules.Decoder(input_dim, deconv_layers, z_dim)
-    model = modules.VAE(encoder, decoder).to(device)
+    if deterministic:
+        encoder = modules.Det_Encoder(input_dim, conv_layers, z_dim)
+        decoder = modules.Decoder(input_dim, deconv_layers, z_dim)
+        model = modules.AE(encoder, decoder).to(device)
+    else:
+        encoder = modules.Encoder(input_dim, conv_layers, z_dim)
+        decoder = modules.Decoder(input_dim, deconv_layers, z_dim)
+        model = modules.VAE(encoder, decoder).to(device)
 
     # (re-)init crit and optim
     optimizer = optim.Adam(model.parameters(), lr = learning_rate)
@@ -125,14 +135,13 @@ def train(config):
                 optimizer.zero_grad()
 
                 # forward pass
-                batch_output, kl_loss = model.forward(batch_input)
-
-                # compute loss
-                loss = criterion(batch_output, batch_input) + kl_loss
-                #print(batch_input)
-                #print(batch_output)
-                #print(loss.item())
-
+                if deterministic:
+                    batch_output = model.forward(batch_input)
+                    loss = criterion(batch_output, batch_input)
+                else:
+                    batch_output, kl_loss = model.forward(batch_input)
+                    loss = criterion(batch_output, batch_input) + kl_loss
+                    
                 # backward pass
                 loss.backward()
 
@@ -167,7 +176,7 @@ def train(config):
 
         # save progress so far
         print('Saving Model..')
-        torch.save(model.state_dict(), cur_dir + config.model_dir + id_str + '/{}.pt'.format(start_time)
+        torch.save(model.state_dict(), cur_dir + config.model_dir + id_str + '/{}.pt'.format(start_time))
         print("Model saved.")
 
     print('Done training.')

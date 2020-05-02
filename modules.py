@@ -8,6 +8,102 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
+class Det_Encoder(nn.Module):
+    def __init__(self, input_dim, layers, z_dim):
+        """
+        params:
+        input_dim: expects a three dimensional array (x_dim, y_dim, channel)
+        batch_size: expects an integer
+        layers: list of conv layers = [[out_0, kernel_size_0], [out_1, kernel_size_1], ...]
+        z_dim: the dimension of the latent space
+        """
+
+        # init nn.Module
+        super().__init__()
+
+        
+        self.input_dim = input_dim
+
+        self.layers = []
+        
+        # set up chain of Convolutions
+        prev_layer = [input_dim[0], 0]
+
+        for _, layer in enumerate(layers):
+        
+            self.layers.append(nn.Conv2d(prev_layer[0], layer[0], layer[1], stride=2))
+            prev_layer = layer
+        
+
+        # final layer are dense layers to compute mean and variance of 
+        # multivariate gaussian
+        self.z = nn.Linear(4096, z_dim, bias = True)
+        
+    
+        # initialize weights
+        for layer in self.layers:
+            nn.init.xavier_uniform_(layer.weight)
+        nn.init.xavier_uniform_(self.z.weight)
+
+
+        # convert to torch list
+        self.layers = nn.ModuleList(self.layers)
+
+    def forward(self, x):
+        """
+        implements forward pass
+
+        params:
+        x: expects something that is of shape [batch_size, input_dim]
+        
+        returns:
+        parameterization of the latent space
+        """
+
+        if tuple(list(x.shape[1:]))  != self.input_dim:
+            print("Input is of dimension {}, expected {}".format(tuple(list(x.shape[1:])) , self.input__dim))
+            raise ValueError
+        
+        # pass x through all convolutions
+        # activation is relu
+        for i, layer in enumerate(self.layers):
+            if i == 0: 
+                hidden = F.relu(self.layers[0](x))
+                continue
+            hidden = F.relu(layer(hidden))
+
+        # flatten
+        hidden = torch.flatten(hidden, start_dim=1)
+        #print(hidden)
+        # compute mean and variance of z:
+        z = self.z(hidden)
+
+
+        return z
+
+class AE(nn.Module):
+    def __init__(self, encoder, decoder, encode_only=False):
+        super().__init__()
+
+        self.encode_only = encode_only
+
+        self.encoder = encoder
+        self.decoder = decoder
+
+    def forward(self, x):
+        
+        # encoding step
+
+        z = self.encoder(x)
+        
+        if self.encode_only:
+            return z
+        else:
+            # decoding step
+            prediction = self.decoder(z)
+
+            return prediction
+
 
 class Encoder(nn.Module):
 

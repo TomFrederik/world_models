@@ -60,7 +60,7 @@ def train(config):
         device = 'cpu'
     
     # controller runs on cpu only
-    ctrl_device = 'cpu'
+    ctrl_device = 'cuda:0'
 
     cur_dir = os.path.dirname(os.path.realpath(__file__))
     model_dir = cur_dir + config.model_dir
@@ -147,8 +147,8 @@ if __name__ == "__main__":
     parser.add_argument('--mdn_layers', type=int, default=[100,100,50,50], help='List of layers in the MDN')
     parser.add_argument('--temp', type=float, default=1, help='Temperature for mixture model')
     parser.add_argument('--ctrl_layers', type=int, default=[], help='List of layers in the Control network')
-    parser.add_argument('--pop_size', type=int, default=20, help='Population size for CMA-ES')
-    parser.add_argument('--num_runs_fitness', type=int, default=5, help='Number of rollouts to evaluate fitness')
+    parser.add_argument('--pop_size', type=int, default=5, help='Population size for CMA-ES')
+    parser.add_argument('--num_runs_fitness', type=int, default=1, help='Number of rollouts to evaluate fitness')
     parser.add_argument('--selection_pressure', type=float, default=0.1, help='Percentage of population that survives each iteration')
     parser.add_argument('--stop_crit', type=int, default=600, help='Average fitness value that needs to be reached')
     parser.add_argument('--batch_size', type=int, default=256, help='Number of examples to process in a batch')
