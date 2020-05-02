@@ -52,7 +52,7 @@ def main(config):
         encoder = modules.Det_Encoder(input_dim, conv_layers, z_dim)
         decoder = modules.Decoder(input_dim, deconv_layers, z_dim)
         model = modules.AE(encoder, decoder).to(device)
-        model_file = 'deterministic_visual_epochs_1_lr_0.001/1588429888.pt' #model_files[0]
+        model_file = 'deterministic_visual_epochs_1_lr_0.001/1588434107.pt' #model_files[0]
         # load model
         model.load_state_dict(torch.load(model_dir + model_file, map_location=torch.device(device)))
     else:
