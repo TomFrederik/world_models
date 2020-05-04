@@ -49,19 +49,18 @@ def train(config):
     learning_rate = config.learning_rate
     epochs = config.epochs
     pop_size = config.pop_size
-    num_runs_fitness = config.num_runs_fitness
+    num_parallel_agents = config.num_parallel_agents
     selection_pressure = config.selection_pressure
     ctrl_layers = config.ctrl_layers
     stop_crit = config.stop_crit
 
     if torch.cuda.is_available():
         device = 'cuda:0'
+        ctrl_device = 'cuda:0'
     else:
         device = 'cpu'
+        ctrl_device = 'cpu'
     
-    # controller runs on cpu only
-    ctrl_device = 'cuda:0'
-
     cur_dir = os.path.dirname(os.path.realpath(__file__))
     model_dir = cur_dir + config.model_dir
 
@@ -77,7 +76,7 @@ def train(config):
     vis_model = modules.VAE(encoder, decoder, encode_only=True).to(device)
     
     # load visual model
-    vis_model_file = 'visual_epochs_1_lr_0.001.pt'
+    vis_model_file = 'variational_visual_epochs_1_lr_0.001/1588429800.pt'
     vis_model.load_state_dict(torch.load(model_dir + vis_model_file, map_location=torch.device(device)))
     vis_model.eval()
     
@@ -99,12 +98,13 @@ def train(config):
 
     # parameters for CMA
     CMA_parameters = {
-        'model_class':modules.Controller, 
+        'model_class':modules.Controller,
+        'ctrl_device':ctrl_device,
         'vis_model':vis_model,
         'mdn_rnn':mdn_model,
         'model_kwargs':ctrl_kwargs, 
         'env_id':'CarRacing-v0', 
-        'num_runs':num_runs_fitness, 
+        'num_parallel_agents':num_parallel_agents, 
         'pop_size':pop_size, 
         'selection_pressure':selection_pressure
     }
@@ -147,9 +147,9 @@ if __name__ == "__main__":
     parser.add_argument('--mdn_layers', type=int, default=[100,100,50,50], help='List of layers in the MDN')
     parser.add_argument('--temp', type=float, default=1, help='Temperature for mixture model')
     parser.add_argument('--ctrl_layers', type=int, default=[], help='List of layers in the Control network')
-    parser.add_argument('--pop_size', type=int, default=5, help='Population size for CMA-ES')
-    parser.add_argument('--num_runs_fitness', type=int, default=1, help='Number of rollouts to evaluate fitness')
-    parser.add_argument('--selection_pressure', type=float, default=0.1, help='Percentage of population that survives each iteration')
+    parser.add_argument('--pop_size', type=int, default=1000, help='Population size for CMA-ES')
+    parser.add_argument('--num_parallel_agents', type=int, default=1, help='Number of agents run in parallel when evaluating fitness')
+    parser.add_argument('--selection_pressure', type=float, default=0.9, help='Percentage of population that survives each iteration')
     parser.add_argument('--stop_crit', type=int, default=600, help='Average fitness value that needs to be reached')
     parser.add_argument('--batch_size', type=int, default=256, help='Number of examples to process in a batch')
     parser.add_argument('--learning_rate', type=float, default=1e-3, help='Learning rate')

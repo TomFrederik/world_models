@@ -61,7 +61,7 @@ class Det_Encoder(nn.Module):
         """
 
         if tuple(list(x.shape[1:]))  != self.input_dim:
-            print("Input is of dimension {}, expected {}".format(tuple(list(x.shape[1:])) , self.input__dim))
+            print("Input is of dimension {}, expected {}".format(tuple(list(x.shape[1:])) , self.input_dim))
             raise ValueError
         
         # pass x through all convolutions
@@ -160,7 +160,7 @@ class Encoder(nn.Module):
         """
 
         if tuple(list(x.shape[1:]))  != self.input_dim:
-            print("Input is of dimension {}, expected {}".format(tuple(list(x.shape[1:])) , self.input__dim))
+            print("Input is of dimension {}, expected {}".format(tuple(list(x.shape[1:])) , self.input_dim))
             raise ValueError
         
         # pass x through all convolutions
@@ -368,7 +368,7 @@ class MDN_RNN(nn.Module):
         self.mdn = MDN(input_dim=lstm_units, layers=mdn_layers, nbr_gauss=nbr_gauss, temp=temp, out_dim=input_dim-3)
 
 
-    def forward(self, input):
+    def forward(self, input, h_0=None):
 
         #print('MDN_RNN Input')
         #print(input.shape) # should be (batch_size, seq_len, z_dim+3), checks out
@@ -377,7 +377,11 @@ class MDN_RNN(nn.Module):
             device = 'cuda:0'
         else:
             device = 'cpu'
-
+        if h_0 != None:
+            c_0 = torch.zeros(self.lstm_layers, input.shape[0], self.lstm_units)
+        else:
+            h_0 = torch.zeros(self.lstm_layers, input.shape[0], self.lstm_units)
+            c_0 = torch.zeros(self.lstm_layers, input.shape[0], self.lstm_units)
         if self.training:
             # in training mode, the last prediction is not saved because it can't be checked against a ground truth
             out_shape = (input.shape[0], input.shape[1]-1, self.nbr_gauss)
@@ -393,7 +397,7 @@ class MDN_RNN(nn.Module):
 
         for t in range(out_shape[1]):
             if t == 0:
-                out_t, (h_t, c_t) = self.lstm(torch.unsqueeze(input[:,t,:], dim=1))
+                out_t, (h_t, c_t) = self.lstm(torch.unsqueeze(input[:,t,:], dim=1), (h_0, c_0))
             else:
                 out_t, (h_t, c_t) = self.lstm(torch.unsqueeze(input[:,t,:], dim=1), (h_t, c_t))
             
