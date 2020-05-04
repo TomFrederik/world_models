@@ -18,7 +18,7 @@ import gym
 from gym import wrappers
 
 # stable baselines
-#from stable_baselines.common import make_vec_env
+from stable_baselines.common import make_vec_env
 
 # other python packages
 import numpy as np
