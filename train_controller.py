@@ -148,7 +148,7 @@ if __name__ == "__main__":
     parser.add_argument('--temp', type=float, default=1, help='Temperature for mixture model')
     parser.add_argument('--ctrl_layers', type=int, default=[], help='List of layers in the Control network')
     parser.add_argument('--pop_size', type=int, default=1000, help='Population size for CMA-ES')
-    parser.add_argument('--num_parallel_agents', type=int, default=1, help='Number of agents run in parallel when evaluating fitness')
+    parser.add_argument('--num_parallel_agents', type=int, default=4, help='Number of agents run in parallel when evaluating fitness')
     parser.add_argument('--selection_pressure', type=float, default=0.9, help='Percentage of population that survives each iteration')
     parser.add_argument('--stop_crit', type=int, default=600, help='Average fitness value that needs to be reached')
     parser.add_argument('--batch_size', type=int, default=256, help='Number of examples to process in a batch')

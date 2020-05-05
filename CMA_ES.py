@@ -10,15 +10,12 @@ import torch.optim as optim
 from torch.utils.data import DataLoader
 from torch.utils.tensorboard import SummaryWriter
 
-# parallel processing
-import torch.multiprocessing as mp
-
 # gym modules
 import gym
 from gym import wrappers
 
-# stable baselines
-from stable_baselines.common import make_vec_env
+# ray for parallization
+import ray
 
 # other python packages
 import numpy as np
@@ -148,30 +145,66 @@ class CMA_ES:
         new_pop = dist.sample(self.pop_size)
 
         return new_pop, dist
-
-    def parallel_initial_action(self, model, ctrl_in, id):
-        '''
-        takes an action for a single agent
-        this function will be run in parallel for different models
-        '''
-        
-        action = model(ctrl_in)
-        #print(action.shape) # [1,3]
-        action = torch.squeeze(action).detach().numpy()
-        #print(action.shape) # [3]
-
-        return [action, id]
     
-    def parallel_action(self, model, ctrl_in, id):
-        '''
-        takes an action for a single agent
-        this function will be run in parallel for different models
-        '''
+    @ray.remote
+    def run_agent(self, model):
+        env = gym.make(self.env_id)
+        done = False
+        cum_rew = 0
+        step = 1
+        start_time = time()
+
+        # get first obs
+        obs = env.reset()
+        obs = np.reshape(obs, (1,3,96,96))
+        obs = torch.from_numpy(obs).to(self.obs_device)
+        obs = obs.float() / 255
+
+        # first pass through world model
+        vis_out, _ = self.vis_model(obs) 
+        run_zs[:,0,:] = vis_out
+        mdn_hidden = self.mdn_rnn.intial_state(batch_size=vis_out.shape[0]).to(self.obs_device)
+        mdn_hidden = torch.squeeze(mdn_hidden, dim =0)
         
+        # first pass through controller
+        ctrl_in = torch.cat((vis_out,mdn_hidden), dim=1).to(self.ctrl_device)
         action = model(ctrl_in)
-        action = torch.squeeze(action).detach().numpy()
+        action = torch.squeeze(action)
         
-        return [action, id]
+        while not done:
+            '''
+            if step % 100 == 0:
+                print('Steps completed in this run: ',step)
+                duration = time()-start_time
+                print('Time since start: {} minutes and {} seconds.'.format(duration//60,duration%60))
+            '''
+
+            obs, rew, done, _ = env.step(action.detach().numpy())
+            cum_rew += rew
+            
+
+            obs = np.reshape(obs, (1,3,96,96))
+            obs = torch.from_numpy(obs).to(self.obs_device)
+            obs = obs.float() / 255
+
+            # pass through world model
+            vis_out, _ = self.vis_model(obs)
+            mdn_in = torch.unsqueeze(torch.cat([vis_out, torch.unsqueeze(action, dim=0)], dim=1), dim=1)
+            mdn_hidden = self.mdn_rnn.forward(mdn_in, h_0=torch.unsqueeze(mdn_hidden, dim=0))
+            mdn_hidden = torch.squeeze(mdn_hidden, dim =0)
+            
+            # first pass through controller
+            ctrl_in = torch.cat((vis_out,mdn_hidden), dim=1).to(self.ctrl_device)
+            action = model(ctrl_in)
+            action = torch.squeeze(action)
+            
+            # inc step counter
+            step += 1
+
+        env.close()
+        duration = time()-start_time
+        print('Finished rollout. Duration: {} minutes and {} seconds'.format(duration//60, duration%60))
+        return cum_rew
 
     def fitness(self, pop):
         '''
@@ -216,12 +249,10 @@ class CMA_ES:
                 obs = torch.from_numpy(obs).to(self.obs_device).detach()
                 obs = obs.float() / 255
                 #print(obs.shape) # [1,3,96,96]
-                self.run_zs = torch.zeros((1,1000,32))
-                self.run_acs = torch.zeros((1,1000,3))
 
                 vis_out, _ = self.vis_model(obs)
                 #print(vis_out.shape) # [1,32]
-                self.run_zs[:,0,:] = vis_out
+
                 mdn_hidden = self.mdn_rnn.intial_state(batch_size=vis_out.shape[0]).to(self.obs_device)
                 #print(mdn_hidden.shape) # [1,1,256]
                 mdn_hidden = torch.squeeze(mdn_hidden, dim =0)
@@ -230,6 +261,7 @@ class CMA_ES:
                 #print(ctrl_in.shape) # [1,288]
                 action = model(ctrl_in) 
                 #print(action.shape) # [1,3]
+                run_acs[:,0,:] = action
                 action = torch.squeeze(action)
                 #print(action.shape) # [3]
 
@@ -251,7 +283,8 @@ class CMA_ES:
                     obs = obs.float()/ 255
 
                     vis_out,_ = self.vis_model(obs)
-                    mdn_in = torch.unsqueeze(torch.cat([self.run_zs[:,step,:], self.run_acs[:,step,:]], dim=1), dim=1)
+                    
+                    mdn_in = torch.unsqueeze(torch.cat([vis_out, torch.unsqueeze(action, dim=0)], dim=1), dim=1)
                     mdn_hidden = self.mdn_rnn.forward(mdn_in, h_0=torch.unsqueeze(mdn_hidden, dim=0))
                     mdn_hidden = torch.squeeze(mdn_hidden, dim =0).to(self.obs_device)
                     ctrl_in = torch.cat((vis_out,mdn_hidden), dim=1).to(self.ctrl_device)
@@ -269,95 +302,22 @@ class CMA_ES:
                 
         
         else:
-            for run_id in range(num_runs):
-                print('Evaluating agents no. {} to {}'.format(run_id+1, run_id+self.num_parallel_agents))
-                agent_params = pop[run_id:run_id+self.num_parallel_agents,:]
-                
-                models = [self.model_class(**self.model_kwargs) for _ in range(self.num_parallel_agents)]
+            cum_rew = torch.zeros_like(fitness)
+            models = [self.model_class(**self.model_kwargs) for _ in range(self.pop_size)]
 
-                # set model params to this agent's params
-                for i in range(len(models)):
-                    models[i].layers[-1].weight.data = torch.reshape(agent_params[i,:864], (3,288))
-                    models[i].layers[-1].bias.data = torch.reshape(agent_params[i,864:], torch.Size([3]))
-                
-                # create environment
-                env = make_vec_env(self.env_id, n_envs=self.num_parallel_agents)
-                obs = env.reset()
-                obs = np.reshape(obs, (obs.shape[0],3,96,96))
-                obs = torch.from_numpy(obs).to(self.obs_device).detach()
-                obs = obs.float() / 255
-                #print(obs.shape) # [4,3,96,96]
+            for run_id in range(self.pop_size):
+                print('Evaluating agent no. {}.'.format(run_id))
 
-                # create storage arrays for encodings and actions
-                self.run_zs = torch.zeros((obs.shape[0],1000,32))
-                self.run_acs = torch.zeros((obs.shape[0],1000,3))
-
-                # first pass through world model
-                vis_out, _ = self.vis_model(obs)
-                #print(vis_out.shape) # [4,32]
-                self.run_zs[:,0,:] = vis_out
-                mdn_hidden = self.mdn_rnn.intial_state(batch_size=vis_out.shape[0]).to(self.obs_device)
-                #print(mdn_hidden.shape) # [1,4,256]
-                mdn_hidden = torch.squeeze(mdn_hidden, dim =0)
-                #print(mdn_hidden.shape) # [4,256]
-                ctrl_in = torch.cat((vis_out,mdn_hidden), dim=1).to(self.ctrl_device)
-                #print(ctrl_in.shape) # [4,288]
-                
-                # take parallel actions
-                pool = mp.Pool(self.num_parallel_agents)
-                ids = np.arange(0,self.num_parallel_agents)
-                args = list(zip(models, ctrl_in, ids))
-                pool_out = [pool.apply_async(self.parallel_initial_action, args=arg).get() for arg in args]
-                pool.close()
-                pool.join()
-                action = np.zeros((self.num_parallel_agents, 3))
-                for i in range(self.num_parallel_agents):
-                    action[pool_out[i][1]] = pool_out[i][0]
-                
-                #done = np.array([False] * self.num_parallel_agents)
-                cum_rew = np.zeros(self.num_parallel_agents)
-                step = 1
-                for i in range(999): # one run is 1000 steps.. somehow done is not true but new tracks are automatically generated after 1000 steps
-                    if step % 100 == 0:
-                        print('Steps completed in this run: ',step)
-                        duration = time()-start_time
-                        print('Time since start: {} minutes and {} seconds.'.format(duration//60,duration%60))
-                    env.step_async(action)
-                    obs, rew, done, _ = env.step_wait()
-                    #print(obs.shape) # [4,96,96,3]
-                    #print(rew.shape) # [4]
-                    #print(done.shape) # [4]
-                    obs = np.reshape(obs, (obs.shape[0],3,96,96))
-                    obs = torch.from_numpy(obs).to(self.obs_device).detach()
-                    obs = obs.float() / 255
-
-                    #pass through world model    
-                    vis_out,_ = self.vis_model(obs)
-                    mdn_in = torch.unsqueeze(torch.cat([self.run_zs[:,step,:], self.run_acs[:,step,:]], dim=1), dim=1)
-                    mdn_hidden = self.mdn_rnn.forward(mdn_in, h_0=torch.unsqueeze(mdn_hidden, dim=0))
-                    mdn_hidden = torch.squeeze(mdn_hidden, dim =0).to(self.obs_device)
-                    ctrl_in = torch.cat((vis_out,mdn_hidden), dim=1).to(self.ctrl_device)
-
-                    # take parallel actions
-                    pool = mp.Pool(self.num_parallel_agents)
-                    ids = np.arange(0,self.num_parallel_agents)
-                    args = list(zip(models, ctrl_in, ids))
-                    pool_out = [pool.apply_async(self.parallel_action, args=arg).get() for arg in args]
-                    pool.close()
-                    pool.join()
-                    action = np.zeros((self.num_parallel_agents, 3))
-                    for i in range(self.num_parallel_agents):
-                        action[pool_out[i][1]] = pool_out[i][0]
-                    
-                    cum_rew += rew
-                    step += 1
-                print(cum_rew)
-                print(cum_rew.shape)
-                mean_rew = np.mean(cum_rew)
-                print('Agents no. {} to {} achieved an average reward of {}.'.format(run_id+1, run_id+self.num_parallel_agents, mean_rew))
-                fitness[run_id:run_id+self.num_parallel_agents] = cum_rew
-                env.close()
+                #load params
+                models[run_id].layers[-1].weight.data = torch.reshape(pop[run_id,:864], (3,288))
+                models[run_id].layers[-1].bias.data = torch.reshape(pop[run_id,864:], torch.Size([3]))
             
+                ray.init()
+                cum_rew = self.run_agent.remote(self, models[run_id])
+
+            cum_rew = np.array([ray.get(rew) for rew in cum_rew])
+            fitness = torch.from_numpy(cum_rew)
+                    
         return fitness
 
     def sample(self, pop_size):
