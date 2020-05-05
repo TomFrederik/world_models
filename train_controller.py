@@ -1,5 +1,5 @@
 """
-In this script we train the controller model.
+In this script we train the controller model!
 """
 
 # torch modules
@@ -8,7 +8,10 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
 from torch.utils.data import DataLoader
-from torch.utils.tensorboard import SummaryWriter
+#from torch.utils.tensorboard import SummaryWriter
+
+# parallel processing
+import ray
 
 # gym modules
 import gym
@@ -61,12 +64,18 @@ def train(config):
         device = 'cpu'
         ctrl_device = 'cpu'
     
+    ## DEBUGGING
+    #device = 'cpu'
+    #ctrl_device = 'cpu'
+    ###
+
+
     cur_dir = os.path.dirname(os.path.realpath(__file__))
     model_dir = cur_dir + config.model_dir
 
     id_str = 'ctrl_epochs_{}_lr_{}_popsize_{}'.format(epochs, learning_rate, pop_size)
     
-    writer = SummaryWriter(model_dir + id_str)
+    #writer = SummaryWriter(model_dir + id_str)
 
     print('Setting up world model..')
 
@@ -112,6 +121,10 @@ def train(config):
     CMA = CMA_ES(**CMA_parameters)
     
     print('Starting training...')
+
+    # init parallel processing
+    if num_parallel_agents > 1:
+        ray.init()
 
     # train
     best_parameters = CMA.train(stop_crit=stop_crit)

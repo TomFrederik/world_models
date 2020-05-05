@@ -446,7 +446,7 @@ class Controller(nn.Module):
     def forward(self, input):
         
         hidden = input
-
+    
         for layer in self.layers[:-1]:
             hidden = F.relu(layer(hidden))
         out = torch.tanh(self.layers[-1](hidden))

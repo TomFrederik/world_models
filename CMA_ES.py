@@ -146,14 +146,13 @@ class CMA_ES:
 
         return new_pop, dist
     
-    @ray.remote
+    @ray.remote(num_gpus=1)
     def run_agent(self, model):
         env = gym.make(self.env_id)
         done = False
         cum_rew = 0
         step = 1
         start_time = time()
-
         # get first obs
         obs = env.reset()
         obs = np.reshape(obs, (1,3,96,96))
@@ -162,7 +161,6 @@ class CMA_ES:
 
         # first pass through world model
         vis_out, _ = self.vis_model(obs) 
-        run_zs[:,0,:] = vis_out
         mdn_hidden = self.mdn_rnn.intial_state(batch_size=vis_out.shape[0]).to(self.obs_device)
         mdn_hidden = torch.squeeze(mdn_hidden, dim =0)
         
@@ -172,12 +170,11 @@ class CMA_ES:
         action = torch.squeeze(action)
         
         while not done:
-            '''
             if step % 100 == 0:
                 print('Steps completed in this run: ',step)
                 duration = time()-start_time
                 print('Time since start: {} minutes and {} seconds.'.format(duration//60,duration%60))
-            '''
+            
 
             obs, rew, done, _ = env.step(action.detach().numpy())
             cum_rew += rew
@@ -191,7 +188,7 @@ class CMA_ES:
             vis_out, _ = self.vis_model(obs)
             mdn_in = torch.unsqueeze(torch.cat([vis_out, torch.unsqueeze(action, dim=0)], dim=1), dim=1)
             mdn_hidden = self.mdn_rnn.forward(mdn_in, h_0=torch.unsqueeze(mdn_hidden, dim=0))
-            mdn_hidden = torch.squeeze(mdn_hidden, dim =0)
+            mdn_hidden = torch.squeeze(mdn_hidden, dim =0).to(self.ctrl_device)
             
             # first pass through controller
             ctrl_in = torch.cat((vis_out,mdn_hidden), dim=1).to(self.ctrl_device)
@@ -302,9 +299,10 @@ class CMA_ES:
                 
         
         else:
-            cum_rew = torch.zeros_like(fitness)
-            models = [self.model_class(**self.model_kwargs) for _ in range(self.pop_size)]
-
+            cum_rew = []
+            models = [self.model_class(**self.model_kwargs).to(self.ctrl_device) for _ in range(self.pop_size)]
+            print(next(models[0].parameters()).is_cuda)
+            #raise NotImplementedError
             for run_id in range(self.pop_size):
                 print('Evaluating agent no. {}.'.format(run_id))
 
@@ -312,8 +310,8 @@ class CMA_ES:
                 models[run_id].layers[-1].weight.data = torch.reshape(pop[run_id,:864], (3,288))
                 models[run_id].layers[-1].bias.data = torch.reshape(pop[run_id,864:], torch.Size([3]))
             
-                ray.init()
-                cum_rew = self.run_agent.remote(self, models[run_id])
+                
+                cum_rew.append(self.run_agent.remote(self, models[run_id]))
 
             cum_rew = np.array([ray.get(rew) for rew in cum_rew])
             fitness = torch.from_numpy(cum_rew)
