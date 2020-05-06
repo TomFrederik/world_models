@@ -12,6 +12,7 @@ from torch.utils.data import DataLoader
 
 # parallel processing
 import ray
+#import torch.multiprocessing as mp
 
 # gym modules
 import gym
@@ -68,6 +69,7 @@ def train(config):
     #device = 'cpu'
     #ctrl_device = 'cpu'
     ###
+    # print(mp.cpu_count()) # 2
 
 
     cur_dir = os.path.dirname(os.path.realpath(__file__))
@@ -91,7 +93,7 @@ def train(config):
     
     # load mdn model
     mdn_params = {'input_dim':z_dim+3, 'lstm_units':lstm_units, 'lstm_layers':lstm_layers, 'nbr_gauss':nbr_gauss, 'mdn_layers':mdn_layers, 'temp':temp}
-    mdn_model = modules.MDN_RNN(**mdn_params)
+    mdn_model = modules.MDN_RNN(**mdn_params).to(device)
     mdn_model_file = 'mdnrnn_epochs_20_lr_0.001_layers_100_100_50_50_schedsteps_100.pt'
     mdn_model.load_state_dict(torch.load(model_dir + mdn_model_file, map_location=torch.device(device)))
     mdn_model.eval()
@@ -161,7 +163,7 @@ if __name__ == "__main__":
     parser.add_argument('--temp', type=float, default=1, help='Temperature for mixture model')
     parser.add_argument('--ctrl_layers', type=int, default=[], help='List of layers in the Control network')
     parser.add_argument('--pop_size', type=int, default=1000, help='Population size for CMA-ES')
-    parser.add_argument('--num_parallel_agents', type=int, default=4, help='Number of agents run in parallel when evaluating fitness')
+    parser.add_argument('--num_parallel_agents', type=int, default=2, help='Number of agents run in parallel when evaluating fitness')
     parser.add_argument('--selection_pressure', type=float, default=0.9, help='Percentage of population that survives each iteration')
     parser.add_argument('--stop_crit', type=int, default=600, help='Average fitness value that needs to be reached')
     parser.add_argument('--batch_size', type=int, default=256, help='Number of examples to process in a batch')

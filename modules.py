@@ -373,21 +373,25 @@ class MDN_RNN(nn.Module):
         #print('MDN_RNN Input')
         #print(input.shape) # should be (batch_size, seq_len, z_dim+3), checks out
 
+        self.lstm.flatten_parameters()
+
         if input.is_cuda:
             device = 'cuda:0'
         else:
             device = 'cpu'
+
         if h_0 != None:
-            c_0 = torch.zeros(self.lstm_layers, input.shape[0], self.lstm_units)
+            c_0 = torch.zeros(self.lstm_layers, input.shape[0], self.lstm_units).to(device)
         else:
-            h_0 = torch.zeros(self.lstm_layers, input.shape[0], self.lstm_units)
-            c_0 = torch.zeros(self.lstm_layers, input.shape[0], self.lstm_units)
+            h_0 = torch.zeros(self.lstm_layers, input.shape[0], self.lstm_units).to(device)
+            c_0 = torch.zeros(self.lstm_layers, input.shape[0], self.lstm_units).to(device)
+        
         if self.training:
             # in training mode, the last prediction is not saved because it can't be checked against a ground truth
             out_shape = (input.shape[0], input.shape[1]-1, self.nbr_gauss)
         else:
             out_shape = (input.shape[0], input.shape[1], self.nbr_gauss)
-            
+        
         coeff_preds = torch.zeros(out_shape).to(device)
         mean_preds = torch.zeros((*out_shape, input.shape[-1]-3)).to(device)
         var_preds = torch.zeros(out_shape).to(device)
