@@ -392,9 +392,9 @@ class MDN_RNN(nn.Module):
         else:
             out_shape = (input.shape[0], input.shape[1], self.nbr_gauss)
         
-        coeff_preds = torch.zeros(out_shape).to(device)
-        mean_preds = torch.zeros((*out_shape, input.shape[-1]-3)).to(device)
-        var_preds = torch.zeros(out_shape).to(device)
+        coeff_preds = torch.zeros(out_shape)
+        mean_preds = torch.zeros((*out_shape, input.shape[-1]-3))
+        var_preds = torch.zeros(out_shape)
         #print(coeff_preds.shape) # [1,1,5]
         #print(mean_preds.shape) # [1,1,5,32]
         #print(var_preds.shape) # [1,1,5]
@@ -416,6 +416,7 @@ class MDN_RNN(nn.Module):
             return coeff_preds, mean_preds, var_preds
         else:
             return h_t
+
 
     def intial_state(self, batch_size):
         '''

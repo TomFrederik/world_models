@@ -21,12 +21,13 @@ import ray
 import numpy as np
 from time import time
 
+
 def count_parameters(model):
     return sum(p.numel() for p in model.parameters() if p.requires_grad)
 
 class CMA_ES:
     
-    def __init__(self, model_class, vis_model, mdn_rnn, ctrl_device='cpu', model_kwargs={}, env_id='CarRacing-v0', num_parallel_agents=4, pop_size=1000, selection_pressure=0.1):
+    def __init__(self, model_class, vis_model, mdn_rnn, model_dir, ctrl_device='cpu', model_kwargs={}, env_id='CarRacing-v0', num_parallel_agents=4, pop_size=1000, selection_pressure=0.1):
 
         # save params in class instance
         self.ctrl_device = ctrl_device
@@ -38,6 +39,7 @@ class CMA_ES:
         self.selection_pressure = selection_pressure
         self.vis_model = vis_model
         self.mdn_rnn = mdn_rnn
+        self.model_dir = model_dir
 
         if next(vis_model.parameters()).is_cuda:
             self.obs_device = 'cuda:0'
@@ -88,10 +90,16 @@ class CMA_ES:
 
             if ctr % 1 == 0:
                 print('Just completed step {0:5d}, average fitness of last step was {1:4.3f}'.format(ctr, torch.mean(cur_pop_fitness)))
+                print('Saving best candidate..')
+                best_candidate = cur_pop_fitness[torch.argsort(cur_pop_fitness, descending=True)[0]]
+                torch.save(best_candidate, f=self.model_dir+'best_candidate.pt')
         
         best_candidate = cur_pop_fitness[torch.argsort(cur_pop_fitness, descending=True)[0]]
         print('Completed training after {0:5d} steps. Best fitness of last step was {1:4.3f}'.format(ctr, best_candidate))
-
+        print('Saving best candidate..')
+        best_candidate = cur_pop_fitness[torch.argsort(cur_pop_fitness, descending=True)[0]]
+        torch.save(best_candidate, f=self.model_dir+'best_candidate.pt')
+        
         return best_candidate
 
     def get_new_dist(self, pop):
@@ -146,70 +154,86 @@ class CMA_ES:
 
         return new_pop, dist
     
-    @ray.remote(num_gpus=0.14)
-    def run_agent(self, model):
+    @ray.remote(num_gpus=0.125)
+    def run_agent(self, model, id):
         #print(next(self.mdn_rnn.parameters()).is_cuda)
+        with torch.no_grad():
+            env = gym.make(self.env_id)
+            done = False
+            cum_rew = 0
+            step = 1
+            start_time = time()
 
-        env = gym.make(self.env_id)
-        done = False
-        cum_rew = 0
-        step = 1
-        start_time = time()
+            # put model on cuda
+            # needs to happen inside this function otherwise model is on cpu again, Cthulu knows why
+            model.to(self.ctrl_device)
 
-        # put model on cuda
-        # needs to happen inside this function otherwise model is on cpu again, Cthulu knows why
-        model.to(self.ctrl_device)
-
-        # get first obs
-        obs = env.reset()
-        obs = np.reshape(obs, (1,3,96,96))
-        obs = torch.from_numpy(obs).to(self.obs_device)
-        obs = obs.float() / 255
-
-        # first pass through world model
-        vis_out, _ = self.vis_model(obs) 
-        mdn_hidden = self.mdn_rnn.intial_state(batch_size=vis_out.shape[0]).to(self.obs_device)
-        mdn_hidden = torch.squeeze(mdn_hidden, dim =0)
-        
-        # first pass through controller
-        ctrl_in = torch.cat((vis_out,mdn_hidden), dim=1).to(self.ctrl_device)
-        action = model(ctrl_in)
-        action = torch.squeeze(action)
-        
-        while not done:
-            if step % 100 == 0:
-                print('Steps completed in this run: ',step)
-                duration = time()-start_time
-                print('Time since start: {} minutes and {} seconds.'.format(duration//60,duration%60))
-            
-
-            obs, rew, done, _ = env.step(action.cpu().detach().numpy())
-            cum_rew += rew
-            
-
+            # get first obs
+            obs = env.reset()
             obs = np.reshape(obs, (1,3,96,96))
             obs = torch.from_numpy(obs).to(self.obs_device)
             obs = obs.float() / 255
 
-            # pass through world model
-            vis_out, _ = self.vis_model(obs)
-            
-            mdn_in = torch.unsqueeze(torch.cat([vis_out, torch.unsqueeze(action, dim=0)], dim=1), dim=1)
-            mdn_hidden = self.mdn_rnn.forward(mdn_in, h_0=torch.unsqueeze(mdn_hidden, dim=0))
-            mdn_hidden = torch.squeeze(mdn_hidden, dim =0).to(self.ctrl_device)
+            # first pass through world model
+            vis_out, _ = self.vis_model(obs) 
+            torch.cuda.empty_cache()
+            mdn_hidden = self.mdn_rnn.intial_state(batch_size=vis_out.shape[0]).to(self.obs_device)
+            mdn_hidden = torch.squeeze(mdn_hidden, dim =0)
             
             # first pass through controller
             ctrl_in = torch.cat((vis_out,mdn_hidden), dim=1).to(self.ctrl_device)
-            action = model(ctrl_in) 
+            torch.cuda.empty_cache()
+
+            action = model(ctrl_in)
             action = torch.squeeze(action)
             
-            # inc step counter
-            step += 1
+            while not done:
+                
+                obs, rew, done, _ = env.step(action.cpu().detach().numpy())
+                cum_rew += rew
 
-        env.close()
-        duration = time()-start_time
-        print('Finished rollout. Duration: {} minutes and {} seconds'.format(duration//60, duration%60))
-        return cum_rew
+                '''
+                if step % 100 == 0:
+                    print('Steps completed in this run: ',step)
+                    duration = time()-start_time
+                    print('Time since start: {} minutes and {} seconds.'.format(duration//60,duration%60))
+                '''
+
+                obs = np.reshape(obs, (1,3,96,96))
+                obs = torch.from_numpy(obs).to(self.obs_device)
+                obs = obs.float() / 255
+
+                # pass through world model
+                vis_out, _ = self.vis_model(obs)
+
+                torch.cuda.empty_cache()
+                mdn_in = torch.unsqueeze(torch.cat([vis_out, torch.unsqueeze(action, dim=0)], dim=1), dim=1)
+                mdn_hidden = self.mdn_rnn.forward(mdn_in, h_0=torch.unsqueeze(mdn_hidden, dim=0))
+                mdn_hidden = torch.squeeze(mdn_hidden, dim =0).to(self.ctrl_device)
+
+                # first pass through controller
+                ctrl_in = torch.cat((vis_out,mdn_hidden), dim=1).to(self.ctrl_device)
+
+                torch.cuda.empty_cache()
+                action = model(ctrl_in)
+                torch.cuda.empty_cache()
+                action = torch.squeeze(action)
+                
+                # inc step counter
+                step += 1
+
+            env.close()            
+            duration = time()-start_time
+            total_duration = time() - self.total_start_time
+            print('###################')
+            print('###################')
+            print('\n\n\n')
+            print('Finished rollout with id {}. Duration: {} minutes and {} seconds'.format(id, duration//60, duration%60))
+            print('Total time elapsed since start of this generation: {} minutes and {} seconds'.format(total_duration//60, total_duration%60))
+            print('\n\n\n')
+            print('###################')
+            print('###################')
+            return cum_rew
 
     def fitness(self, pop):
         '''
@@ -227,6 +251,9 @@ class CMA_ES:
 
         # container for fitness values
         fitness = torch.zeros(self.pop_size)
+
+        # start counter
+        self.total_start_time = time()
 
         # calc number of parallel runs
         if self.pop_size % self.num_parallel_agents != 0:
@@ -312,14 +339,11 @@ class CMA_ES:
             #print(next(models[0].parameters()).is_cuda)
             #raise NotImplementedError
             for run_id in range(self.pop_size):
-                print('Instantiating agent no. {}.'.format(run_id))
-
                 #load params
                 models[run_id].layers[-1].weight.data = torch.reshape(pop[run_id,:864], (3,288))
                 models[run_id].layers[-1].bias.data = torch.reshape(pop[run_id,864:], torch.Size([3]))
             
-                
-            cum_rew = [self.run_agent.remote(self, model) for model in models]
+            cum_rew = [self.run_agent.remote(self, model, id) for (model, id) in zip(models, np.arange(self.pop_size))]
             cum_rew = np.array(ray.get(cum_rew))
             fitness = torch.from_numpy(cum_rew)
                     
