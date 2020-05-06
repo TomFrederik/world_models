@@ -254,99 +254,25 @@ class CMA_ES:
 
         # start counter
         self.total_start_time = time()
-
-        # calc number of parallel runs
-        if self.pop_size % self.num_parallel_agents != 0:
-            raise ValueError('Pop size needs to be divisible by number of parallel agents, but are {} and {} respectively.'.format(self.pop_size, self.num_parallel_agents))
-        num_runs = self.pop_size // self.num_parallel_agents
-
-        start_time = time()
-
-        if self.num_parallel_agents == 1:
-            for run_id in range(num_runs):
-                print('Evaluating agent no. {}'.format(run_id+1))
-                agent_params = pop[run_id,:]
-                
-                model = self.model_class(**self.model_kwargs)
-
-                # set model params to this agent's params
-                model.layers[-1].weight.data = torch.reshape(agent_params[:864], (3,288))
-                model.layers[-1].bias.data = torch.reshape(agent_params[864:], torch.Size([3]))
-                
-                # create environment
-                env = gym.make(self.env_id)
-                obs = env.reset()
-                obs = np.reshape(obs, (1,3,96,96))
-                obs = torch.from_numpy(obs).to(self.obs_device).detach()
-                obs = obs.float() / 255
-                #print(obs.shape) # [1,3,96,96]
-
-                vis_out, _ = self.vis_model(obs)
-                #print(vis_out.shape) # [1,32]
-
-                mdn_hidden = self.mdn_rnn.intial_state(batch_size=vis_out.shape[0]).to(self.obs_device)
-                #print(mdn_hidden.shape) # [1,1,256]
-                mdn_hidden = torch.squeeze(mdn_hidden, dim =0)
-                #print(mdn_hidden.shape) # [1,256]
-                ctrl_in = torch.cat((vis_out,mdn_hidden), dim=1).to(self.ctrl_device)
-                #print(ctrl_in.shape) # [1,288]
-                action = model(ctrl_in) 
-                #print(action.shape) # [1,3]
-                run_acs[:,0,:] = action
-                action = torch.squeeze(action)
-                #print(action.shape) # [3]
-
-                done = np.array([False] * self.num_parallel_agents)
-                cum_rew = np.zeros(self.num_parallel_agents)
-                step = 1
-                for i in range(999): # one run is 1000 steps.. somehow done is not true but new tracks are automatically generated after 1000 steps
-                    if step % 100 == 0:
-                        print('Steps completed in this run: ',step)
-                        duration = time()-start_time
-                        print('Time since start: {} minutes and {} seconds.'.format(duration//60,duration%60))
-                    obs, rew, done, _ = env.step(action.detach().numpy())
-                    
-                    #print(obs.shape) # [1,96,96,3]
-                    #print(rew.shape) # [1]
-                    #print(done.shape) # [1]
-                    obs = np.reshape(obs, (1,3,96,96))
-                    obs = torch.from_numpy(obs).to(self.obs_device).detach()
-                    obs = obs.float()/ 255
-
-                    vis_out,_ = self.vis_model(obs)
-                    
-                    mdn_in = torch.unsqueeze(torch.cat([vis_out, torch.unsqueeze(action, dim=0)], dim=1), dim=1)
-                    mdn_hidden = self.mdn_rnn.forward(mdn_in, h_0=torch.unsqueeze(mdn_hidden, dim=0))
-                    mdn_hidden = torch.squeeze(mdn_hidden, dim =0).to(self.obs_device)
-                    ctrl_in = torch.cat((vis_out,mdn_hidden), dim=1).to(self.ctrl_device)
-                    
-                    action = model(ctrl_in)
-                    action = torch.squeeze(action)
-                    
-                    cum_rew += rew
-                    step += 1
-
-                mean_rew = np.mean(cum_rew)
-                print('Agent {} achieved an average reward of {}.'.format(run_id+1, mean_rew))
-                fitness[run_id] = mean_rew
-                env.close()
-                
         
-        else:
-            cum_rew = []
-            models = [self.model_class(**self.model_kwargs) for _ in range(self.pop_size)]
-            #print(next(models[0].parameters()).is_cuda)
-            #raise NotImplementedError
-            for run_id in range(self.pop_size):
-                #load params
-                models[run_id].layers[-1].weight.data = torch.reshape(pop[run_id,:864], (3,288))
-                models[run_id].layers[-1].bias.data = torch.reshape(pop[run_id,864:], torch.Size([3]))
-            
-            cum_rew_ids = [self.run_agent.remote(self, model, id) for (model, id) in zip(models, np.arange(self.pop_size))]
-            for run_id in range(self.pop_size):
-                cum_rew.append(ray.get(cum_rew_ids[run_id]))
-            fitness = torch.from_numpy(np.array(cum_rew))
-                    
+        # container list for fitness values
+        cum_rew = []
+        
+        # list of all the models instantiated with their respective parameters
+        models = [self.model_class(**self.model_kwargs) for _ in range(self.pop_size)]
+        for run_id in range(self.pop_size):
+            #load params
+            models[run_id].layers[-1].weight.data = torch.reshape(pop[run_id,:864], (3,288))
+            models[run_id].layers[-1].bias.data = torch.reshape(pop[run_id,864:], torch.Size([3]))
+        
+        # run each agent once
+        cum_rew_ids = [self.run_agent.remote(self, model, id) for (model, id) in zip(models, np.arange(self.pop_size))]
+        for run_id in range(self.pop_size):
+            cum_rew.append(ray.get(cum_rew_ids[run_id]))
+        
+        # save as fitness and return
+        fitness = torch.from_numpy(np.array(cum_rew))
+                
         return fitness
 
     def sample(self, pop_size):
