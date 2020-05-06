@@ -127,7 +127,10 @@ def train(config):
 
     # init parallel processing
     if num_parallel_agents > 1:
-        ray.init(num_cpus=num_parallel_agents, object_store_memory=15e9)
+        ray.init(num_cpus=num_parallel_agents, 
+                object_store_memory=1024*1024*1024*13,
+                redis_max_memory=1024*1024*100
+        )
 
     # train
     best_parameters = CMA.train(stop_crit=stop_crit)

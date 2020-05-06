@@ -150,7 +150,7 @@ class CMA_ES:
         dist = self.get_new_dist(survivors)
 
         # sample from new dist
-        new_pop = dist.sample(self.pop_size)
+        new_pop = dist.sample(torch.Size([self.pop_size]))
 
         return new_pop, dist
     
@@ -262,7 +262,6 @@ class CMA_ES:
 
         start_time = time()
 
-        # don't know how to properly parallelize with different parameters for each agent
         if self.num_parallel_agents == 1:
             for run_id in range(num_runs):
                 print('Evaluating agent no. {}'.format(run_id+1))
@@ -343,9 +342,10 @@ class CMA_ES:
                 models[run_id].layers[-1].weight.data = torch.reshape(pop[run_id,:864], (3,288))
                 models[run_id].layers[-1].bias.data = torch.reshape(pop[run_id,864:], torch.Size([3]))
             
-            cum_rew = [self.run_agent.remote(self, model, id) for (model, id) in zip(models, np.arange(self.pop_size))]
-            cum_rew = np.array(ray.get(cum_rew))
-            fitness = torch.from_numpy(cum_rew)
+            cum_rew_ids = [self.run_agent.remote(self, model, id) for (model, id) in zip(models, np.arange(self.pop_size))]
+            for run_id in range(self.pop_size):
+                cum_rew.append(ray.get(cum_rew_ids[run_id]))
+            fitness = torch.from_numpy(np.array(cum_rew))
                     
         return fitness
 
