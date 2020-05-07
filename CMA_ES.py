@@ -8,7 +8,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
 from torch.utils.data import DataLoader
-from torch.utils.tensorboard import SummaryWriter
+#from torch.utils.tensorboard import SummaryWriter
 
 # gym modules
 import gym
@@ -20,6 +20,7 @@ import ray
 # other python packages
 import numpy as np
 from time import time
+import os
 
 
 def count_parameters(model):
@@ -54,54 +55,6 @@ class CMA_ES:
         # get init normal distributions
         self.dist = torch.distributions.multivariate_normal.MultivariateNormal(loc=torch.zeros(self.num_params), covariance_matrix=torch.eye(self.num_params, self.num_params))
 
-    def train(self, stop_crit=600):
-        '''
-        Executes the CMA-ES algorithm.
-        params:
-        stop_crit - average fitness of the population that triggers stopping training
-
-        returns:
-        best_candidate - the best parameter vector of the last generation with shape (num_params)
-        '''
-
-        # sample initial population
-        cur_pop = self.sample(self.pop_size)
-
-        # calc fitness of current pop
-        with torch.no_grad():
-            cur_pop_fitness = self.fitness(cur_pop)
-        print(cur_pop_fitness)
-
-        done = False
-        ctr = 0
-        while not done:
-
-            # compute new dist and sample for new pop
-            cur_pop, self.dist = self.evolution_step(cur_pop, cur_pop_fitness)
-
-            # calc fitness of current pop
-            cur_pop_fitness = self.fitness(cur_pop)
-
-            # check if done
-            if torch.mean(cur_pop_fitness) >= stop_crit:
-                done = True
-
-            ctr += 1
-
-            if ctr % 1 == 0:
-                print('Just completed step {0:5d}, average fitness of last step was {1:4.3f}'.format(ctr, torch.mean(cur_pop_fitness)))
-                print('Saving best candidate..')
-                best_candidate = cur_pop_fitness[torch.argsort(cur_pop_fitness, descending=True)[0]]
-                torch.save(best_candidate, f=self.model_dir+'best_candidate.pt')
-        
-        best_candidate = cur_pop_fitness[torch.argsort(cur_pop_fitness, descending=True)[0]]
-        print('Completed training after {0:5d} steps. Best fitness of last step was {1:4.3f}'.format(ctr, best_candidate))
-        print('Saving best candidate..')
-        best_candidate = cur_pop_fitness[torch.argsort(cur_pop_fitness, descending=True)[0]]
-        torch.save(best_candidate, f=self.model_dir+'best_candidate.pt')
-        
-        return best_candidate
-
     def get_new_dist(self, pop):
         '''
         params:
@@ -116,16 +69,16 @@ class CMA_ES:
         #print(pop.shape)
         
         centering = torch.eye(pop.shape[0]) - 1/(pop.shape[0]) * torch.ones((pop.shape[0], pop.shape[0]))
-        print('center shape',centering.shape)
+        #print('center shape',centering.shape) # [900,900]
         # calc mean
         mean = torch.mean(pop, dim=0)
         #print(mean.shape) # [867]
         # calc cov matrix as 1/(n-1) M^T M, where M is X-mean(X)
         diff_matrix = torch.matmul(centering, pop)
-        print('diff_matrix.shape', diff_matrix.shape)
+        #print('diff_matrix.shape', diff_matrix.shape) # [900,867]
         covariance = 1/(pop.shape[0]-1) * torch.matmul(diff_matrix.t(), diff_matrix)
         #print(covariance)
-        print('covariance.shape',covariance.shape) # [867,867]
+        #print('covariance.shape',covariance.shape) # [867,867]
         # create new dist object
         new_dist = torch.distributions.multivariate_normal.MultivariateNormal(loc=mean, covariance_matrix=covariance)
 
@@ -154,7 +107,7 @@ class CMA_ES:
 
         return new_pop, dist
     
-    @ray.remote(num_gpus=0.125)
+    @ray.remote(num_gpus=0.0625)
     def run_agent(self, model, id):
         #print(next(self.mdn_rnn.parameters()).is_cuda)
         with torch.no_grad():
@@ -225,14 +178,14 @@ class CMA_ES:
             env.close()            
             duration = time()-start_time
             total_duration = time() - self.total_start_time
+            print('\n')
             print('###################')
-            print('###################')
-            print('\n\n\n')
+            print('\n\n')
             print('Finished rollout with id {}. Duration: {} minutes and {} seconds'.format(id, duration//60, duration%60))
             print('Total time elapsed since start of this generation: {} minutes and {} seconds'.format(total_duration//60, total_duration%60))
-            print('\n\n\n')
+            print('\n\n')
             print('###################')
-            print('###################')
+            print('\n')
             return cum_rew
 
     def fitness(self, pop):
@@ -255,9 +208,6 @@ class CMA_ES:
         # start counter
         self.total_start_time = time()
         
-        # container list for fitness values
-        cum_rew = []
-        
         # list of all the models instantiated with their respective parameters
         models = [self.model_class(**self.model_kwargs) for _ in range(self.pop_size)]
         for run_id in range(self.pop_size):
@@ -267,11 +217,10 @@ class CMA_ES:
         
         # run each agent once
         cum_rew_ids = [self.run_agent.remote(self, model, id) for (model, id) in zip(models, np.arange(self.pop_size))]
-        for run_id in range(self.pop_size):
-            cum_rew.append(ray.get(cum_rew_ids[run_id]))
         
         # save as fitness and return
-        fitness = torch.from_numpy(np.array(cum_rew))
+        for run_id in range(self.pop_size):
+            fitness[run_id] = ray.get(cum_rew_ids[run_id])
                 
         return fitness
 

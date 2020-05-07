@@ -8,7 +8,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
 from torch.utils.data import DataLoader
-#from torch.utils.tensorboard import SummaryWriter
+from torch.utils.tensorboard import SummaryWriter
 
 # parallel processing
 import ray
@@ -38,6 +38,68 @@ from CMA_ES import CMA_ES
 def count_parameters(model):
     return sum(p.numel() for p in model.parameters() if p.requires_grad)
 
+def train_CMA(CMA, writer, stop_crit=600):
+        '''
+        Executes the CMA-ES algorithm.
+        params:
+        CMA - an instance of CMA
+        stop_crit - average fitness of the population that triggers stopping training
+        writer - a tensorboard summary writer
+
+        returns:
+        best_candidate - the best parameter vector of the last generation with shape (num_params)
+        '''
+
+        ctr = 0
+        
+        # sample initial population
+        cur_pop = CMA.sample(CMA.pop_size)
+
+        # calc fitness of current pop
+        cur_pop_fitness = CMA.fitness(cur_pop)
+
+        mean_fitness = torch.mean(cur_pop_fitness)
+        best_fitness_id = torch.argsort(cur_pop_fitness, descending=True)[0]
+
+        writer.add_scalar('mean fitness', mean_fitness, ctr)
+        writer.add_scalar('best fitness', cur_pop_fitness[best_fitness_id], ctr)
+
+        print('Just completed step {0:5d}, average fitness of last step was {1:4.3f}'.format(ctr, mean_fitness))
+        print('Saving best candidate..')
+        best_candidate = cur_pop[best_fitness_id]
+        torch.save(best_candidate, f=CMA.model_dir+'best_candidate.pt')
+
+        done = False
+        while not done:
+            ctr += 1
+            # compute new dist and sample for new pop
+            cur_pop, CMA.dist = CMA.evolution_step(cur_pop, cur_pop_fitness)
+
+            # calc fitness of current pop
+            cur_pop_fitness = CMA.fitness(cur_pop)
+
+            # check if done
+            if torch.mean(cur_pop_fitness) >= stop_crit:
+                done = True
+
+            ctr += 1
+
+            mean_fitness = torch.mean(cur_pop_fitness)
+            best_fitness_id = torch.argsort(cur_pop_fitness, descending=True)[0]
+
+            writer.add_scalar('mean fitness', mean_fitness, ctr)
+            writer.add_scalar('best fitness', cur_pop_fitness[best_fitness_id], ctr)
+
+            print('Just completed step {0:5d}, average fitness of last step was {1:4.3f}'.format(ctr, mean_fitness))
+            print('Saving best candidate..')
+            best_candidate = cur_pop[best_fitness_id]
+            torch.save(best_candidate, f=CMA.model_dir+'best_candidate.pt')
+        
+        print('Completed training after {0:5d} steps. Best fitness of last step was {1:4.3f}'.format(ctr, best_candidate))
+        print('Saving best candidate..')
+        torch.save(best_candidate, f=CMA.model_dir+'best_candidate.pt')
+        return best_candidate
+
 def train(config):
 
     # get arguments
@@ -64,23 +126,21 @@ def train(config):
     else:
         device = 'cpu'
         ctrl_device = 'cpu'
-    
-    ## DEBUGGING
-    #device = 'cpu'
-    #ctrl_device = 'cpu'
-    ###
-    # print(mp.cpu_count()) # 2
 
-
+    # setting up paths
     cur_dir = os.path.dirname(os.path.realpath(__file__))
     model_dir = cur_dir + config.model_dir
-
     id_str = 'ctrl_epochs_{}_lr_{}_popsize_{}'.format(epochs, learning_rate, pop_size)
-    
-    #writer = SummaryWriter(model_dir + id_str)
+
+    # init tensorboard
+    log_dir = model_dir+'/'+id_str+'/'
+    (_,_,files) = os.walk(log_dir).__next__()
+    run_id = 'run_' + str(len(files))
+    log_dir = log_dir + run_id
+    writer = SummaryWriter(log_dir)
+    print('Saving results and logs in directory', log_dir)
 
     print('Setting up world model..')
-
     # set up visual model
     encoder = modules.Encoder(input_dim, conv_layers, z_dim)
     decoder = modules.Decoder(input_dim, deconv_layers, z_dim)
@@ -124,18 +184,17 @@ def train(config):
     CMA = CMA_ES(**CMA_parameters)
     
     print('Starting training...')
-
     # init parallel processing
     if num_parallel_agents > 1:
         ray.init(num_cpus=num_parallel_agents, 
-                object_store_memory=1024*1024*1024*13,
-                redis_max_memory=1024*1024*100
+                object_store_memory=1024*1024*1024*12,
+                redis_max_memory=1024*1024*200
         )
 
     # train
-    best_parameters = CMA.train(stop_crit=stop_crit)
-    print(best_parameters.shape)
-    print(best_parameters)
+    best_parameters = train_CMA(CMA=CMA, writer=writer, stop_crit=stop_crit)
+    
+    print('Saving final model')
     # save model
     best_model = modules.Controller(ctrl_kwargs)
     best_model.parameters().data = best_parameters
@@ -167,7 +226,7 @@ if __name__ == "__main__":
     parser.add_argument('--temp', type=float, default=1, help='Temperature for mixture model')
     parser.add_argument('--ctrl_layers', type=int, default=[], help='List of layers in the Control network')
     parser.add_argument('--pop_size', type=int, default=1000, help='Population size for CMA-ES')
-    parser.add_argument('--num_parallel_agents', type=int, default=8, help='Number of agents run in parallel when evaluating fitness')
+    parser.add_argument('--num_parallel_agents', type=int, default=14, help='Number of agents run in parallel when evaluating fitness')
     parser.add_argument('--selection_pressure', type=float, default=0.9, help='Percentage of population that survives each iteration')
     parser.add_argument('--stop_crit', type=int, default=600, help='Average fitness value that needs to be reached')
     parser.add_argument('--batch_size', type=int, default=256, help='Number of examples to process in a batch')
