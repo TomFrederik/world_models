@@ -1,0 +1,29 @@
+Failure # 1 (occurred at 2020-05-09_12-44-31)
+Traceback (most recent call last):
+  File "/home/tom/anaconda3/lib/python3.7/site-packages/ray/tune/trial_runner.py", line 467, in _process_trial
+    result = self.trial_executor.fetch_result(trial)
+  File "/home/tom/anaconda3/lib/python3.7/site-packages/ray/tune/ray_trial_executor.py", line 381, in fetch_result
+    result = ray.get(trial_future[0], DEFAULT_GET_TIMEOUT)
+  File "/home/tom/anaconda3/lib/python3.7/site-packages/ray/worker.py", line 1513, in get
+    raise value.as_instanceof_cause()
+ray.exceptions.RayTaskError(TuneError): [36mray::WrappedTrackFunc.train()[39m (pid=6088, ip=192.168.1.107)
+  File "python/ray/_raylet.pyx", line 452, in ray._raylet.execute_task
+  File "python/ray/_raylet.pyx", line 407, in ray._raylet.execute_task.function_executor
+  File "/home/tom/anaconda3/lib/python3.7/site-packages/ray/tune/trainable.py", line 261, in train
+    result = self._train()
+  File "/home/tom/anaconda3/lib/python3.7/site-packages/ray/tune/function_runner.py", line 216, in _train
+    self._report_thread_runner_error(block=True)
+  File "/home/tom/anaconda3/lib/python3.7/site-packages/ray/tune/function_runner.py", line 259, in _report_thread_runner_error
+    .format(err_tb_str)))
+ray.tune.error.TuneError: Trial raised an exception. Traceback:
+[36mray::WrappedTrackFunc.train()[39m (pid=6088, ip=192.168.1.107)
+  File "/home/tom/anaconda3/lib/python3.7/site-packages/ray/tune/function_runner.py", line 110, in run
+    self._entrypoint()
+  File "/home/tom/anaconda3/lib/python3.7/site-packages/ray/tune/function_runner.py", line 162, in entrypoint
+    return self._trainable_func(config, self._status_reporter)
+  File "/home/tom/anaconda3/lib/python3.7/site-packages/ray/tune/function_runner.py", line 288, in _trainable_func
+    output = train_func(config)
+  File "/home/tom/Desktop/Projects/AI/world_models/train_visual.py", line 116, in train_visual
+    loss = test(model, criterion, files[-1], batch_size, device)
+IndexError: list index out of range
+

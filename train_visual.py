@@ -10,6 +10,9 @@ import torch.optim as optim
 from torch.utils.data import DataLoader
 from torch.utils.tensorboard import SummaryWriter
 
+# hyperparam tuning
+from ray import tune
+
 
 # other ptyhon modules
 import argparse
@@ -51,34 +54,34 @@ def get_batches(data, batch_size):
     return batches
 
 
-def train(config):
+def train_visual(config):
 
     # get arguments
-    input_dim = config.input_dim
-    conv_layers = config.conv_layers
-    deconv_layers = config.deconv_layers
-    z_dim = config.latent_dim
-    batch_size = config.batch_size
-    learning_rate = config.learning_rate
-    epochs = config.epochs
+    input_dim = config['input_dim']
+    conv_layers = config['conv_layers']
+    deconv_layers = config['deconv_layers']
+    z_dim = config['latent_dim']
+    batch_size = config['batch_size']
+    learning_rate = config['learning_rate']
+    epochs = config['epochs']
     if torch.cuda.is_available():
         device = 'cuda:0'
     else:
         device = 'cpu'
-
-    cur_dir = os.path.dirname(os.path.realpath(__file__))
     
     # use AE or VAE?
     deterministic = False
     
     if deterministic:
-        id_str = 'deterministic_visual_epochs_{}_lr_{}'.format(epochs, learning_rate)
+        id_str = 'deterministic_visual_epochs_{}'.format(epochs, learning_rate)
     else:
-        id_str = 'variational_visual_epochs_{}_lr_{}'.format(epochs, learning_rate)
-
-    start_time = int(time())
+        id_str = 'variational_visual_epochs_{}'.format(epochs, learning_rate)
     
-    writer = SummaryWriter(cur_dir + config.model_dir + id_str)
+    cur_dir = os.path.dirname(os.path.realpath(__file__))
+    model_path = cur_dir + config['model_dir'] + id_str + '/tune/lr_{}.pt'.format(learning_rate)
+
+    
+    #writer = SummaryWriter(cur_dir + config['model_dir'] + id_str)
 
     # set up model
     if deterministic:
@@ -92,7 +95,7 @@ def train(config):
 
     # (re-)init crit and optim
     optimizer = optim.Adam(model.parameters(), lr = learning_rate)
-    scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=400, gamma=0.3)
+    #scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=400, gamma=0.3)
     criterion = nn.MSELoss()
     
     # get data
@@ -101,7 +104,54 @@ def train(config):
     (_,_,files) = os.walk(data_dir).__next__()
 
     files = [data_dir + file for file in files]
+    
+    # train model on all files but the last one
+    model.train()
+    model = train(model, optimizer, criterion, files[:-1], batch_size, device)
+    print('Done training model.')
+    print('Testing model')
+    # test model on last file
+    model.eval()
+    with torch.no_grad():
+        loss = test(model, criterion, files[-1], batch_size, device)
+    tune.track.log(loss = loss)
+    print('Saving model')
+    torch.save(model, model_path)
 
+def test(model, criterion, files, batch_size, device):
+
+    test_loss = 0
+
+    for file_idx, file in enumerate(files):
+        data = np.load(file, allow_pickle = True)
+        print('Getting batches of file {}...'.format(file_idx+1))
+        batches = np.array(get_batches(data[:,1,:], batch_size)) # only look at observations
+        # shape is e.g. (781, 128, 3, 96, 96) = (nbr_batches, batch_size, C_in, H, W)
+
+        for step, batch_input in enumerate(batches):
+                
+                # store batches on GPU
+                # make tensor
+                batch_input = torch.from_numpy(batch_input).to(device)
+            
+                # make float
+                batch_input = batch_input.float()
+
+                # normalize from 0..255 to 0..1
+                batch_input = batch_input / 255
+
+                # forward pass
+                if deterministic:
+                    batch_output = model.forward(batch_input)
+                    loss = criterion(batch_output, batch_input)
+                    test_loss += loss.item() / len(batches)
+                else:
+                    batch_output, kl_loss = model.forward(batch_input)
+                    loss = criterion(batch_output, batch_input) + kl_loss
+                    test_loss += loss.item() / len(batches)
+    return test_loss
+
+def train(model, optimizer, criterion, files, batch_size, device):
     print('Starting training...')
     log_ctr = 0
     running_loss = 0
@@ -113,9 +163,6 @@ def train(config):
         print('Getting batches of file {}...'.format(file_idx+1))
         batches = np.array(get_batches(data[:,1,:], batch_size)) # only look at observations
         # shape is e.g. (781, 128, 3, 96, 96) = (nbr_batches, batch_size, C_in, H, W)
-
-        
-
 
         for epoch in range(epochs):
             
@@ -149,24 +196,29 @@ def train(config):
                 optimizer.step()
                 
                 # update lr
-                scheduler.step()
+                #scheduler.step()
 
                 ###
                 # logging
                 ###
-                running_loss += loss.item()
+                
 
                 # inc log counter
                 log_ctr += 1
-            
+                tune.track.log(loss=loss.item())
+                
+                '''
+                running_loss += loss.item()
                 if log_ctr % 10 == 0:
                     # log the losses
+                    
                     writer.add_scalar('training loss',
                                 running_loss / 10,
                                 epoch * batches.shape[0] + file_run_ctr + step)
                     print('At epoch {0:5d}, step {1:5d}, the loss is {2:4.10f}'.format(epoch+1, epoch * batches.shape[0] + file_run_ctr + step+1, running_loss/10))
                     running_loss = 0
-        
+                '''
+
         # inc step counter across files
         file_run_ctr += batches.shape[0]*epochs
         
@@ -174,13 +226,14 @@ def train(config):
         del data
         del batches
 
-        # save progress so far!
-        print('Saving Model..')
-        torch.save(model.state_dict(), cur_dir + config.model_dir + id_str + '/{}.pt'.format(start_time))
-        print("Model saved.")
-
-    print('Done training.')
-    print('Exiting program..')
+    return model
+    '''
+    # save progress so far!
+    print('Saving Model..')
+    torch.save(model.state_dict(), cur_dir + config['model_dir'] + id_str + '/{}.pt'.format(start_time))
+    print("Model saved.")
+    '''
+    
 ################################################################################
 ################################################################################
 
@@ -199,8 +252,25 @@ if __name__ == "__main__":
     parser.add_argument('--latent_dim', type=int, default=32, help="Dimension of the latent space")
     parser.add_argument('--model_dir', type=str, default='/models/', help="Relative directory for saving models")
     
+    config = vars(parser.parse_args())
+    
+    ## DEBUG
+    train_visual(config)
 
-    config = parser.parse_args()
+    # use AE or VAE?
+    deterministic = False
+    
+    if deterministic:
+        id_str = 'deterministic_visual_epochs_{}'.format(config['epochs'])
+    else:
+        id_str = 'variational_visual_epochs_{}'.format(config['epochs'])
+    
+    cur_dir = os.path.dirname(os.path.realpath(__file__))
+    model_dir = cur_dir + config['model_dir'] + id_str + '/tune/'
+
+    config['learning_rate'] = tune.grid_search([1e-4,1e-3,1e-2])
 
     # Train the model
-    train(config)
+    analysis = tune.run(train_visual, config=config, local_dir=model_dir, scheduler=tune.schedulers.ASHAScheduler(metric='loss', mode='min'))
+    dfs = analysis.trial_dataframes
+    [d.mean_accuracy.plot() for d in dfs.values()]
