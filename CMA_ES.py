@@ -71,16 +71,16 @@ class CMA_ES:
         centering = torch.eye(pop.shape[0]) - 1/(pop.shape[0]) * torch.ones((pop.shape[0], pop.shape[0]))
         #print('center shape',centering.shape) # [900,900]
         # calc mean
-        mean = torch.mean(pop, dim=0)
+        self.mean = torch.mean(pop, dim=0)
         #print(mean.shape) # [867]
         # calc cov matrix as 1/(n-1) M^T M, where M is X-mean(X)
         diff_matrix = torch.matmul(centering, pop)
         #print('diff_matrix.shape', diff_matrix.shape) # [900,867]
-        covariance = 1/(pop.shape[0]-1) * torch.matmul(diff_matrix.t(), diff_matrix)
+        self.covariance = 1/(pop.shape[0]-1) * torch.matmul(diff_matrix.t(), diff_matrix)
         #print(covariance)
         #print('covariance.shape',covariance.shape) # [867,867]
         # create new dist object
-        new_dist = torch.distributions.multivariate_normal.MultivariateNormal(loc=mean, covariance_matrix=covariance)
+        new_dist = torch.distributions.multivariate_normal.MultivariateNormal(loc=self.mean, covariance_matrix=self.covariance)
 
         return new_dist
 
