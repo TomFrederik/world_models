@@ -12,7 +12,8 @@ from torch.utils.tensorboard import SummaryWriter
 
 # hyperparam tuning
 from ray import tune
-
+import hyperopt.hp as hp 
+from ray.tune.suggest.hyperopt import HyperOptSearch
 
 # other ptyhon modules
 import argparse
@@ -20,6 +21,7 @@ from time import time
 from datetime import datetime
 import numpy as np
 import os
+import gc
 
 # my modules
 import modules
@@ -64,11 +66,12 @@ def train_visual(config):
     batch_size = config['batch_size']
     learning_rate = config['learning_rate']
     epochs = config['epochs']
+    cur_dir = config['cur_dir']
     if torch.cuda.is_available():
         device = 'cuda:0'
     else:
         device = 'cpu'
-    
+
     # use AE or VAE?
     deterministic = False
     
@@ -77,8 +80,7 @@ def train_visual(config):
     else:
         id_str = 'variational_visual_epochs_{}'.format(epochs)
     
-    cur_dir = os.path.dirname(os.path.realpath(__file__))
-    model_path = cur_dir + config['model_dir'] + id_str + '/tune/lr_{}.pt'.format(learning_rate)
+    #model_path = cur_dir + config['model_dir'] + id_str + '/tune/lr_{}.pt'.format(learning_rate)
 
     
     #writer = SummaryWriter(cur_dir + config['model_dir'] + id_str)
@@ -102,7 +104,6 @@ def train_visual(config):
     print('Loading data..')
     data_dir = cur_dir + '/data/'
     (_,_,files) = os.walk(data_dir).__next__()
-
     files = [data_dir + file for file in files]
     
     # train model on all files but the last one
@@ -116,7 +117,7 @@ def train_visual(config):
         loss = test(model, criterion, files[-1], batch_size, device)
     tune.track.log(loss = loss)
     print('Saving model')
-    torch.save(model, model_path)
+    torch.save(model, './model.pt')
 
 def test(model, criterion, files, batch_size, device):
 
@@ -187,7 +188,8 @@ def train(model, optimizer, criterion, files, batch_size, device, epochs):
                     loss = criterion(batch_output, batch_input)
                 else:
                     batch_output, kl_loss = model.forward(batch_input)
-                    loss = criterion(batch_output, batch_input) + kl_loss
+                    loss = criterion(batch_output, batch_input)
+                    loss += kl_loss
                     
                 # backward pass
                 loss.backward()
@@ -205,27 +207,25 @@ def train(model, optimizer, criterion, files, batch_size, device, epochs):
 
                 # inc log counter
                 log_ctr += 1
-                tune.track.log(loss=loss.item())
                 
-                '''
                 running_loss += loss.item()
                 if log_ctr % 10 == 0:
                     # log the losses
-                    
-                    writer.add_scalar('training loss',
-                                running_loss / 10,
-                                epoch * batches.shape[0] + file_run_ctr + step)
+                    tune.track.log(train_loss=running_loss/10)
+                #    writer.add_scalar('training loss',
+                #               running_loss / 10,
+                #               epoch * batches.shape[0] + file_run_ctr + step)
                     print('At epoch {0:5d}, step {1:5d}, the loss is {2:4.10f}'.format(epoch+1, epoch * batches.shape[0] + file_run_ctr + step+1, running_loss/10))
                     running_loss = 0
-                '''
-
+                
         # inc step counter across files
         file_run_ctr += batches.shape[0]*epochs
         
         #free memory for next file
         del data
         del batches
-
+        gc.collect()
+    
     return model
     '''
     # save progress so far!
@@ -246,7 +246,7 @@ if __name__ == "__main__":
     parser.add_argument('--input_dim', type=tuple, default=(3,96,96), help='Dimensionality of input picture')
     parser.add_argument('--conv_layers', type=int, default=[[32, 4], [64,4], [128,4], [256,4]], help='List of Conv Layers in the format [[out_0, kernel_size_0], [out_1, kernel_size_1], ...]')
     parser.add_argument('--deconv_layers', type=int, default=[[128, 4], [64,4], [32,4], [8,4], [3,6]], help='List of Deconv Layers in the format [[out_0, kernel_size_0], [out_1, kernel_size_1], ...]')
-    parser.add_argument('--batch_size', type=int, default=256, help='Number of examples to process in a batch')
+    parser.add_argument('--batch_size', type=int, default=64, help='Number of examples to process in a batch')
     parser.add_argument('--learning_rate', type=float, default=1e-3, help='Learning rate')
     parser.add_argument('--epochs', type=int, default=1, help='Number of epochs')
     parser.add_argument('--latent_dim', type=int, default=32, help="Dimension of the latent space")
@@ -265,9 +265,17 @@ if __name__ == "__main__":
     cur_dir = os.path.dirname(os.path.realpath(__file__))
     model_dir = cur_dir + config['model_dir'] + id_str + '/tune/'
 
-    config['learning_rate'] = tune.grid_search([1e-4,1e-3,1e-2])
+    config['learning_rate'] = hp.loguniform('learning_rate', np.log(1e-6), np.log(1e-3))
+    config['cur_dir'] = cur_dir
+
+    hyperopt = HyperOptSearch(config, metric='train_loss', mode='min')
 
     # Train the model
-    analysis = tune.run(train_visual, config=config, local_dir=model_dir, scheduler=tune.schedulers.ASHAScheduler(metric='loss', mode='min'))
+    analysis = tune.run(train_visual,search_alg=hyperopt, num_samples=10,
+                        stop={'train_loss':0.2}, local_dir=model_dir, 
+                        scheduler=tune.schedulers.ASHAScheduler(metric='train_loss', mode='min'),
+                        resources_per_trial={'cpu':4, "gpu": 0.25},
+                        loggers=None
+    )
     dfs = analysis.trial_dataframes
     [d.mean_accuracy.plot() for d in dfs.values()]
