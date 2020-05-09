@@ -73,9 +73,9 @@ def train_visual(config):
     deterministic = False
     
     if deterministic:
-        id_str = 'deterministic_visual_epochs_{}'.format(epochs, learning_rate)
+        id_str = 'deterministic_visual_epochs_{}'.format(epochs)
     else:
-        id_str = 'variational_visual_epochs_{}'.format(epochs, learning_rate)
+        id_str = 'variational_visual_epochs_{}'.format(epochs)
     
     cur_dir = os.path.dirname(os.path.realpath(__file__))
     model_path = cur_dir + config['model_dir'] + id_str + '/tune/lr_{}.pt'.format(learning_rate)
@@ -107,7 +107,7 @@ def train_visual(config):
     
     # train model on all files but the last one
     model.train()
-    model = train(model, optimizer, criterion, files[:-1], batch_size, device)
+    model = train(model, optimizer, criterion, files[:-1], batch_size, device, epochs)
     print('Done training model.')
     print('Testing model')
     # test model on last file
@@ -151,7 +151,7 @@ def test(model, criterion, files, batch_size, device):
                     test_loss += loss.item() / len(batches)
     return test_loss
 
-def train(model, optimizer, criterion, files, batch_size, device):
+def train(model, optimizer, criterion, files, batch_size, device, epochs):
     print('Starting training...')
     log_ctr = 0
     running_loss = 0
@@ -253,9 +253,6 @@ if __name__ == "__main__":
     parser.add_argument('--model_dir', type=str, default='/models/', help="Relative directory for saving models")
     
     config = vars(parser.parse_args())
-    
-    ## DEBUG
-    train_visual(config)
 
     # use AE or VAE?
     deterministic = False
