@@ -38,7 +38,7 @@ from CMA_ES import CMA_ES
 def count_parameters(model):
     return sum(p.numel() for p in model.parameters() if p.requires_grad)
 
-def train_CMA(CMA, writer, stop_crit=600):
+def train_CMA(CMA, writer, stop_crit=600, old_run={'mean':None,'cov':None,'run_nbr':None}):
         '''
         Executes the CMA-ES algorithm.
         params:
@@ -52,6 +52,17 @@ def train_CMA(CMA, writer, stop_crit=600):
 
         ctr = 0
         
+        mean = old_run['mean']
+        cov = old_run['cov']
+        run_nbr = old_run['run_nbr']
+
+        # continuing an old run?
+        if mean:
+            CMA.mean = mean
+            CMA.covariance = cov
+            CMA.dist = torch.distributions.multivariate_normal.MultivariateNormal(loc=mean, covariance=cov)
+            CMA.model_dir = CMA.model_dir[:-1] + str(run_nbr)
+
         # sample initial population
         cur_pop = CMA.sample(CMA.pop_size)
 
@@ -61,13 +72,17 @@ def train_CMA(CMA, writer, stop_crit=600):
         mean_fitness = torch.mean(cur_pop_fitness)
         best_fitness_id = torch.argsort(cur_pop_fitness, descending=True)[0]
 
-        writer.add_scalar('mean fitness', mean_fitness, ctr)
-        writer.add_scalar('best fitness', cur_pop_fitness[best_fitness_id], ctr)
+        writer.add_scalar(tag='mean fitness', scalar_value=mean_fitness, global_step=ctr)
+        writer.add_scalar(tag='best fitness', scalar_value=cur_pop_fitness[best_fitness_id], global_step=ctr)
+        writer.flush()
 
         print('Just completed step {0:5d}, average fitness of last step was {1:4.3f}'.format(ctr, mean_fitness))
         print('Saving best candidate..')
         best_candidate = cur_pop[best_fitness_id]
-        torch.save(best_candidate, f=CMA.model_dir+'best_candidate.pt')
+        torch.save(best_candidate, f=CMA.model_dir+'/best_candidate.pt')
+        print('Saving covariance and mean..')
+        torch.save(CMA.mean, f=CMA.model_dir+'/mean.pt')
+        torch.save(CMA.covariance, f=CMA.model_dir+'/cov.pt')
 
         done = False
         while not done:
@@ -89,15 +104,23 @@ def train_CMA(CMA, writer, stop_crit=600):
 
             writer.add_scalar('mean fitness', mean_fitness, ctr)
             writer.add_scalar('best fitness', cur_pop_fitness[best_fitness_id], ctr)
+            writer.flush()
 
             print('Just completed step {0:5d}, average fitness of last step was {1:4.3f}'.format(ctr, mean_fitness))
             print('Saving best candidate..')
             best_candidate = cur_pop[best_fitness_id]
-            torch.save(best_candidate, f=CMA.model_dir+'best_candidate.pt')
+            torch.save(best_candidate, f=CMA.model_dir+'/best_candidate.pt')
+            print('Saving covariance and mean..')
+            torch.save(CMA.mean, f=CMA.model_dir+'/mean.pt')
+            torch.save(CMA.covariance, f=CMA.model_dir+'/cov.pt')
+
         
         print('Completed training after {0:5d} steps. Best fitness of last step was {1:4.3f}'.format(ctr, best_candidate))
         print('Saving best candidate..')
-        torch.save(best_candidate, f=CMA.model_dir+'best_candidate.pt')
+        torch.save(best_candidate, f=CMA.model_dir+'/best_candidate.pt')
+        print('Saving covariance and mean..')
+        torch.save(CMA.mean, f=CMA.model_dir+'/mean.pt')
+        torch.save(CMA.covariance, f=CMA.model_dir+'/cov.pt')
         return best_candidate
 
 def train(config):
@@ -178,7 +201,7 @@ def train(config):
         'num_parallel_agents':num_parallel_agents, 
         'pop_size':pop_size,
         'selection_pressure':selection_pressure,
-        'model_dir':model_dir+'/'+id_str+'/'
+        'model_dir':log_dir
     }
 
     CMA = CMA_ES(**CMA_parameters)
@@ -192,7 +215,11 @@ def train(config):
         )
 
     # train
-    best_parameters = train_CMA(CMA=CMA, writer=writer, stop_crit=stop_crit)
+    mean = None
+    cov = None
+    run_nbr = None
+    old_run = {'mean':mean,'cov':cov,'run_nbr':run_nbr}
+    best_parameters = train_CMA(CMA=CMA, writer=writer, stop_crit=stop_crit, old_run=old_run)
     
     print('Saving final model')
     # save model
@@ -225,9 +252,9 @@ if __name__ == "__main__":
     parser.add_argument('--mdn_layers', type=int, default=[100,100,50,50], help='List of layers in the MDN')
     parser.add_argument('--temp', type=float, default=1, help='Temperature for mixture model')
     parser.add_argument('--ctrl_layers', type=int, default=[], help='List of layers in the Control network')
-    parser.add_argument('--pop_size', type=int, default=1000, help='Population size for CMA-ES')
+    parser.add_argument('--pop_size', type=int, default=1500, help='Population size for CMA-ES')
     parser.add_argument('--num_parallel_agents', type=int, default=14, help='Number of agents run in parallel when evaluating fitness')
-    parser.add_argument('--selection_pressure', type=float, default=0.9, help='Percentage of population that survives each iteration')
+    parser.add_argument('--selection_pressure', type=float, default=0.7, help='Percentage of population that survives each iteration')
     parser.add_argument('--stop_crit', type=int, default=600, help='Average fitness value that needs to be reached')
     parser.add_argument('--batch_size', type=int, default=256, help='Number of examples to process in a batch')
     parser.add_argument('--learning_rate', type=float, default=1e-3, help='Learning rate')

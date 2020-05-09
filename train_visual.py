@@ -69,8 +69,8 @@ def train(config):
     cur_dir = os.path.dirname(os.path.realpath(__file__))
     
     # use AE or VAE?
-    deterministic = True
-
+    deterministic = False
+    
     if deterministic:
         id_str = 'deterministic_visual_epochs_{}_lr_{}'.format(epochs, learning_rate)
     else:
