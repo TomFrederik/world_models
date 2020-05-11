@@ -1,0 +1,3 @@
+train_loss,trial_id,training_iteration,time_this_iter_s,done,timesteps_total,episodes_total,experiment_id,date,timestamp,time_total_s,pid,hostname,node_ip,time_since_restore,timesteps_since_restore,iterations_since_restore,experiment_tag
+0.11366346888244153,a5b37fc0,0,16.035775899887085,False,,,fd7004b5abce4f448c37a3be56cf48c8,2020-05-11_14-14-55,1589206495,16.035775899887085,10866,deeplearning-vm-vm,10.138.0.2,16.035775899887085,0,1,39_learning_rate=0.0023629
+0.0578834880143404,a5b37fc0,1,1.676218032836914,True,,,fd7004b5abce4f448c37a3be56cf48c8,2020-05-11_14-14-57,1589206497,17.711993932724,10866,deeplearning-vm-vm,10.138.0.2,17.711993932724,0,2,39_learning_rate=0.0023629

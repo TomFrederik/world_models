@@ -277,7 +277,7 @@ class VAE(nn.Module):
 
         # get KL loss
         kl_loss = -0.5 - torch.log(std) + (std**2 + z_mean**2)/2
-        kl_loss = torch.sum(kl_loss) # sum over whole batch at once
+        kl_loss = torch.sum(torch.mean(kl_loss, dim=0)) # mean over batch
         
         if self.encode_only:
             return z_sample, kl_loss
