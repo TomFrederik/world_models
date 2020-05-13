@@ -68,33 +68,43 @@ def main(config):
     # convert 
     data = data.flatten()
     data = np.array([item for item in data])
-
     # reshape and normalize
     data = torch.from_numpy(np.reshape(data, (1000,3,96,96))).to(device).float() / 255
 
     output, _ = model.forward(data)
+    output = output.detach().cpu().numpy()
+    output = np.reshape(output, (1000,96,96,3))
 
-    
+    data = data.cpu().numpy() 
+    data = data.reshape((1000,96,96,3)) 
     # Set up formatting for the movie files
     Writer = ani.writers['ffmpeg']
-    writer = Writer(fps=15, metadata=dict(artist='Me'), bitrate=1800)
+    writer = Writer(fps=30, metadata=dict(artist='Me'), bitrate=1800)
+    
+    def init():
+        im.set_data(np.zeros((96,96,3)))
+        return [im]
+
+    im = plt.imshow(np.zeros((96,96,3)))
     
     # create animations
     def orig_func(frame):
-        return data[frame]
-    def output_func(frame):
-        print(frame)
-        print(output.shape)
-        return output[frame]
-    
+        im.set_array(data[frame])
+        return [im]
     fig1=plt.figure()
-    fig2=plt.figure()
-    autoencoded_ani = ani.FuncAnimation(fig=fig1, func=output_func, frames=1000)
-    original_ani = ani.FuncAnimation(fig=fig2, func=orig_func, frames=1000)
-
+    original_ani = ani.FuncAnimation(fig=fig1, func=orig_func, init_func=init, frames=1000)
     original_ani.save('/home/tom/world_models/plots/input.mp4')
-    autoencoded_ani.save('/home/tom/world_models/plots/output.mp4')
+    plt.show()
+    plt.close()
 
+    def output_func(frame):
+        im.set_array(output[frame])
+        return [im]
+    fig2=plt.figure()
+    autoencoded_ani = ani.FuncAnimation(fig=fig2, func=output_func, init_func=init, frames=1000)
+    autoencoded_ani.save('/home/tom/world_models/plots/output.mp4')
+    plt.show()
+    plt.close()
 
 if __name__ == "__main__":
 
