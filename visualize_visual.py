@@ -78,16 +78,16 @@ def main(config):
     data = data.cpu().numpy() 
     data = data.reshape((1000,96,96,3)) 
     # Set up formatting for the movie files
-    Writer = ani.writers['ffmpeg']
-    writer = Writer(fps=30, metadata=dict(artist='Me'), bitrate=1800)
-    
+    writer = ani.FFMpegWriter(fps=30)
+    '''
     def init():
         im.set_data(np.zeros((96,96,3)))
         return [im]
-
+    '''
     im = plt.imshow(np.zeros((96,96,3)))
     
     # create animations
+    ''' 
     def orig_func(frame):
         im.set_array(data[frame])
         return [im]
@@ -105,7 +105,21 @@ def main(config):
     autoencoded_ani.save('/home/tom/world_models/plots/output.mp4')
     plt.show()
     plt.close()
-
+    '''
+    fig = plt.figure()
+    with writer.saving(fig, '/home/tom/world_models/plots/input.mp4', 1000):
+        for i in range(1000):
+            im.set_data(data[i])
+            writer.grab_frame()
+            print(i)
+    plt.close()
+    fig = plt.figure()
+    with writer.saving(fig, '/home/tom/world_models/plots/output.mp4', 1000):
+        for i in range(1000):
+            im.set_data(output[i])
+            writer.grab_frame()
+            print(i)
+    plt.close()
 if __name__ == "__main__":
 
     # Parse training configuration
