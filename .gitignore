@@ -4,5 +4,7 @@
 ./data/*
 data/
 *.pt
+./enc_data/*
 enc_data/
+*npy
 
