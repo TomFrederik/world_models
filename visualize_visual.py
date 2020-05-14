@@ -107,7 +107,7 @@ def main(config):
     '''
     fig = plt.figure()
     im = plt.imshow(np.zeros((96,96,3)), animated=True)
-    with writer.saving(fig, '/home/tom/world_models/plots/input.mp4', 640):
+    with writer.saving(fig, '/home/tom/world_models/plots/input.mp4', 10):
         for i in range(1000):
             im.set_data(data[i])
             writer.grab_frame()
@@ -115,7 +115,7 @@ def main(config):
     plt.close()
     fig = plt.figure()
     im = plt.imshow(np.zeros((96,96,3)), animated=True)
-    with writer.saving(fig, '/home/tom/world_models/plots/output.mp4', 640):
+    with writer.saving(fig, '/home/tom/world_models/plots/output.mp4', 10):
         for i in range(1000):
             im.set_data(output[i])
             writer.grab_frame()
