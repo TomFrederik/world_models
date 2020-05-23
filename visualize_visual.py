@@ -59,7 +59,7 @@ def main(config):
     else:
         encoder = modules.Encoder(input_dim, conv_layers, z_dim)
         decoder = modules.Decoder(input_dim, deconv_layers, z_dim)
-        model_file = '/home/tom/world_models/models/variational_visual_epochs_2/lr_0.0036481/run_0/model.pt' #model_files[0]
+        model_file = '/home/tom/Desktop/Projects/AI/world_models/models/variational_visual_epochs_2/lr_0.0036481/run_0/model.pt' #model_files[0]
         model = torch.load(model_file)
     
     # load data
@@ -107,7 +107,7 @@ def main(config):
     '''
     fig = plt.figure()
     im = plt.imshow(np.zeros((96,96,3)), animated=True)
-    with writer.saving(fig, '/home/tom/world_models/plots/input.mp4', 10):
+    with writer.saving(fig, '/home/tom/Desktop/Projects/AI/world_models/plots/input.mp4', 100):
         for i in range(1000):
             im.set_data(data[i])
             writer.grab_frame()
@@ -115,7 +115,7 @@ def main(config):
     plt.close()
     fig = plt.figure()
     im = plt.imshow(np.zeros((96,96,3)), animated=True)
-    with writer.saving(fig, '/home/tom/world_models/plots/output.mp4', 10):
+    with writer.saving(fig, '/home/tom/Desktop/Projects/AI/world_models/plots/output.mp4', 100):
         for i in range(1000):
             im.set_data(output[i])
             writer.grab_frame()
