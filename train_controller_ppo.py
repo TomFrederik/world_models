@@ -2,6 +2,18 @@
 In this script we train the controller model
 """
 
+# parallel processing
+#import ray
+
+# gym modules
+import gym
+from gym import wrappers
+
+# stable baselines
+from stable_baselines3.ppo import MlpPolicy
+from stable_baselines3.common.cmd_util import make_vec_env
+from stable_baselines3.ppo import PPO
+
 # torch modules
 import torch
 import torch.nn as nn
@@ -9,18 +21,6 @@ import torch.nn.functional as F
 import torch.optim as optim
 from torch.utils.data import DataLoader
 from torch.utils.tensorboard import SummaryWriter
-
-# parallel processing
-import ray
-
-# gym modules
-import gym
-from gym import wrappers
-
-# stable baselines
-from stable_baselines.common.policies import MlpPolicy
-from stable_baselines.common import make_vec_env
-from stable_baselines import PPO2
 
 # other ptyhon modules
 import argparse
@@ -87,10 +87,10 @@ def train(config):
     print('Starting training...')
     env_kwargs = {'env_id':'CarRacing-v0', 'vis_model':vis_model, 'mdn_model':mdn_model}
     # train
-    env = make_vec_env(env_id=WrapperEnv, n_envs=2, env_kwargs=env_kwargs)
+    env = make_vec_env(env_id=WrapperEnv, n_envs=4, env_kwargs=env_kwargs)
     
-    model = PPO2(MlpPolicy, env, tensorboard_log=log_dir, verbose=1)
-    model.learn(total_timesteps=200000)
+    model = PPO(MlpPolicy, env, tensorboard_log=log_dir, verbose=1, n_steps=1000)
+    model.learn(total_timesteps=1000000)
     model.save(model_dir + "/model")
 
     
