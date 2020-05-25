@@ -87,9 +87,9 @@ def train(config):
     print('Starting training...')
     env_kwargs = {'env_id':'CarRacing-v0', 'vis_model':vis_model, 'mdn_model':mdn_model}
     # train
-    env = make_vec_env(env_id=WrapperEnv, n_envs=6, env_kwargs=env_kwargs)
+    env = make_vec_env(env_id=WrapperEnv, n_envs=2, env_kwargs=env_kwargs)
 
-    model = PPO2(MlpPolicy, tensorboard_log=log_dir, verbose=1)
+    model = PPO2(MlpPolicy, env, tensorboard_log=log_dir, verbose=1)
     model.learn(total_timesteps=200000)
     model.save(model_dir + "/model")
 
