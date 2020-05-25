@@ -41,6 +41,7 @@ def main(config):
 
     model_dir = cur_dir + '/models/'
     data_dir = cur_dir + '/data/'
+    plot_dir = cur_dir + '/plots/'
 
     (_,_,model_files) = os.walk(model_dir).__next__()
     (_,_,data_files) = os.walk(data_dir).__next__()
@@ -59,8 +60,8 @@ def main(config):
     else:
         encoder = modules.Encoder(input_dim, conv_layers, z_dim)
         decoder = modules.Decoder(input_dim, deconv_layers, z_dim)
-        model_file = '/home/tom/Desktop/Projects/AI/world_models/models/variational_visual_epochs_2/lr_0.0036481/run_0/model.pt' #model_files[0]
-        model = torch.load(model_file)
+        model_file = model_dir+'variational_visual_epochs_2/lr_0.0036481/run_0/model.pt' #model_files[0]
+        model = torch.load(model_file, map_location=torch.device(device))
     
     # load data
     data = np.load(data_dir + data_files[0], allow_pickle=True)[0,1,:]
@@ -107,7 +108,7 @@ def main(config):
     '''
     fig = plt.figure()
     im = plt.imshow(np.zeros((96,96,3)), animated=True)
-    with writer.saving(fig, '/home/tom/Desktop/Projects/AI/world_models/plots/input.mp4', 300):
+    with writer.saving(fig, plot_dir+'input.mp4', 300):
         for i in range(1000):
             im.set_data(data[i])
             writer.grab_frame()
@@ -115,7 +116,7 @@ def main(config):
     plt.close()
     fig = plt.figure()
     im = plt.imshow(np.zeros((96,96,3)), animated=True)
-    with writer.saving(fig, '/home/tom/Desktop/Projects/AI/world_models/plots/output.mp4', 300):
+    with writer.saving(fig, plot_dir+'output.mp4', 300):
         for i in range(1000):
             im.set_data(output[i])
             writer.grab_frame()
