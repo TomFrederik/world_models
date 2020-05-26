@@ -223,7 +223,7 @@ def train(config):
     
     print('Saving final model')
     # save model
-    best_model = modules.Controller(ctrl_kwargs)
+    best_model = modules.Controller(**ctrl_kwargs)
     best_model.parameters().data = best_parameters
     torch.save(best_model, model_dir + 'controller_{}.pt'.format(int(time())))
 
