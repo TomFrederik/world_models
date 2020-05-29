@@ -173,7 +173,8 @@ def run_agent(model, id, env_id, ctrl_device, obs_device, total_start_time, vis_
         print('###################')
         print('\n')
         '''
-        return 1/cum_rew
+        #print('Aget with id {} had cum_rew of {}'.format(id, cum_rew))
+        return 1000 - cum_rew
 
 
 def fitness(pop, ctrl_kwargs, model_class, env_id, ctrl_device, obs_device, vis_model, mdn_model):
@@ -378,7 +379,7 @@ def train(config):
         layer.bias.data = torch.reshape(best_parameters[last_id:last_id+num_biases], bias_shape).float()
         last_id += num_biases
 
-    torch.save(best_model, log_dir + 'controller_{}.pt'.format(int(time())))
+    torch.save(best_model, log_dir + '/controller_{}.pt'.format(int(time())))
 
     print('Showcasing the best model...')
     showcase(vis_model, mdn_model, best_model, env_id, device, ctrl_device)
@@ -404,7 +405,7 @@ if __name__ == "__main__":
     parser.add_argument('--temp', type=float, default=1, help='Temperature for mixture model')
     parser.add_argument('--ctrl_layers', type=int, default=[], help='List of layers in the Control network')
     #parser.add_argument('--pop_size', type=int, default=1500, help='Population size for CMA-ES')
-    parser.add_argument('--num_parallel_agents', type=int, default=2, help='Number of agents run in parallel when evaluating fitness')
+    parser.add_argument('--num_parallel_agents', type=int, default=10, help='Number of agents run in parallel when evaluating fitness')
     #parser.add_argument('--selection_pressure', type=float, default=0.7, help='Percentage of population that survives each iteration')
     parser.add_argument('--stop_crit', type=float, default=0.002, help='Average fitness value that needs to be reached')
     parser.add_argument('--stop_median_crit', type=float, default=0.005, help='Median fitness value that needs to be reached')

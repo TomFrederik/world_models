@@ -123,6 +123,14 @@ class CMA_ES:
 
             mean_fitness = torch.mean(self.fitness)
             best_fitness = self.fitness[0]
+            if ctr == 0:
+                global_best_fitness = best_fitness
+                global_best_params = self.cur_pop[0]
+
+            if best_fitness < global_best_fitness:
+                global_best_fitness = best_fitness
+                global_best_params = self.cur_pop[0]
+
             median_fitness = self.fitness[int(len(self.fitness)//2)]
             
             writer.add_scalar('mean fitness', mean_fitness, ctr)
@@ -132,10 +140,9 @@ class CMA_ES:
             writer.add_scalar('entropy', self.dist.entropy().item(), ctr)
             writer.flush()
 
-            print('Just completed step {0:5d}, average fitness of last step was {1:4.3f}'.format(ctr+1, mean_fitness))
+            print('Just completed step {0:4d}, average fitness of last step was {1:4.5f}'.format(ctr, mean_fitness))
             print('Saving best candidate..')
-            best_candidate = self.cur_pop[0]
-            torch.save(best_candidate, f=model_dir+'/best_candidate.pt')
+            torch.save(global_best_candidate, f=model_dir+'/best_candidate.pt')
             print('Saving covariance and mean..')
             torch.save(self.mean, f=model_dir+'/mean.pt')
             torch.save(self.cov, f=model_dir+'/cov.pt')
