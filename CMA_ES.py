@@ -23,10 +23,227 @@ from time import time
 import os
 
 
+# matrix square root
+from sqrtm import sqrtm
+
+
 def count_parameters(model):
     return sum(p.numel() for p in model.parameters() if p.requires_grad)
 
 class CMA_ES:
+
+    def __init__(self, nbr_params, fitness_func, stop_fitness=0.01, stop_median_fitness=0.01, pop_size=None, mu=None, weights=None, sigma=0.5, mean=None):
+        '''
+        params:
+        nbr_params - int, n in the algorithm, dimension of the search space
+        fitness_func - function, fitness function to minimize. Should take a population of vectors x and returns a float
+        stop_fitness - float, if at least one x has better fitniss than this, training is halted
+        pop_size - int, lambda in the algorithm
+        mu - int, selected number per generation
+        weights - list or 1D ndarray, recombination weights for the mu selected vectors
+        sigma - float, initial step size for CMA
+        mean - ndarray, initial mean for CMA
+        '''
+        self.pop_size = pop_size
+        self.nbr_params = nbr_params
+        self.mu = mu
+        self.weights = weights
+        self.fitness_func = fitness_func
+        self.stop_fitness = stop_fitness
+        self.stop_median_fitness = stop_median_fitness
+        self.sigma = sigma
+        self.mean = mean
+
+        # calculate default params if they are not overridden
+        if pop_size == None:
+            self.pop_size = int(4 + np.floor(3*np.log(nbr_params)))
+
+        if mean == None:
+            self.mean = torch.zeros(nbr_params)
+
+        if mu == None:
+            self.mu = self.pop_size // 2
+
+        if weights == None:
+            self.weights = []
+            for i in range(1, self.pop_size+1):
+                self.weights.append(np.log((self.pop_size + 1) / 2) - np.log(i))
+        self.weights = torch.from_numpy(np.array(self.weights))
+
+        self.mu_eff = torch.sum(self.weights[:self.mu]) ** 2 / torch.sum(self.weights[:self.mu] ** 2)
+        self.mu_eff_bar = torch.sum(self.weights[self.mu:]) ** 2 / torch.sum(self.weights[self.mu:] ** 2)
+        self.mu_w = (torch.sum(self.weights[:mu] ** 2)) ** -1 
+
+        self.c_c = (4 + self.mu_eff / nbr_params) / (nbr_params + 4 + 2 * self.mu_eff / nbr_params)
+        self.c_1 = 2 / ((nbr_params + 1.3) ** 2 +  self.mu_eff)
+        self.c_mu = np.min([1-self.c_1, 2 * ( (self.mu_eff - 2 + 1/self.mu_eff) / ((nbr_params + 2) ** 2 + self.mu_eff) )])
+        self.c_sig = (self.mu_eff + 2) / (nbr_params + self.mu_eff + 5)
+        self.d_sig = 1 + 2 * np.max([0, np.sqrt((self.mu_eff -1) / (nbr_params + 1) ) - 1]) + self.c_sig
+
+        self.alpha_mu_bar = 1 + self.c_1 / self.c_mu
+        self.alpha_mu_eff_bar = 1 + 2 * self.mu_eff_bar / (self.mu_eff + 2)
+        self.alpha_posdef_bar = (1 - self.c_1 - self.c_mu) / (nbr_params * self.c_mu)
+
+        self.weights[self.weights >= 0] = self.weights[self.weights >= 0] / torch.sum(self.weights[self.weights > 0])
+        self.weights[self.weights < 0] = self.weights[self.weights < 0] * np.min([self.alpha_mu_bar, self.alpha_mu_eff_bar, self.alpha_posdef_bar]) / torch.sum(-1 * self.weights[self.weights < 0])
+
+        self.p_c = torch.zeros(nbr_params)
+        self.p_sig = torch.zeros(nbr_params)
+
+        self.cov = torch.eye(nbr_params)
+        self.sqrt_inv_cov = torch.eye(nbr_params)
+
+    def train_until_convergence(self, writer, model_dir):
+        '''
+        Executes CMA-ES until convergence is reached, with the parameters specified in the init function
+        params:
+        writer - tensorboard logger
+        model_dir - str, directory to save the training results in
+        '''
+
+        converged = False
+        ctr = 0
+        
+        while not converged:
+
+            # sample set of vectors
+            self.cur_pop = self.get_sample()
+
+            # evaluate on fitness function
+
+            # start counter
+            self.total_start_time = time()
+
+            self.fitness = self.fitness_func(self.cur_pop)
+
+            # rank pop by fitness
+            idcs = torch.argsort(self.fitness)
+            self.fitness = self.fitness[idcs]
+            self.cur_pop = self.cur_pop[idcs,:]
+
+            mean_fitness = torch.mean(self.fitness)
+            best_fitness = self.fitness[0]
+            median_fitness = self.fitness[int(len(self.fitness)//2)]
+            
+            writer.add_scalar('mean fitness', mean_fitness, ctr)
+            writer.add_scalar('best fitness', best_fitness, ctr)
+            writer.add_scalar('median fitness', median_fitness, ctr)
+            writer.add_scalar('det covariance', torch.det(self.cov), ctr)
+            writer.add_scalar('entropy', self.dist.entropy().item(), ctr)
+            writer.flush()
+
+            print('Just completed step {0:5d}, average fitness of last step was {1:4.3f}'.format(ctr+1, mean_fitness))
+            print('Saving best candidate..')
+            best_candidate = self.cur_pop[0]
+            torch.save(best_candidate, f=model_dir+'/best_candidate.pt')
+            print('Saving covariance and mean..')
+            torch.save(self.mean, f=model_dir+'/mean.pt')
+            torch.save(self.cov, f=model_dir+'/cov.pt')
+
+            ctr += 1
+
+            # test convergence criteria
+            converged = self.convergence_test()
+            if converged:
+                continue
+
+            # update mean
+            self.old_mean = self.mean.clone()
+            self.mean = torch.mean(self.cur_pop[:self.mu], dim=0)
+
+            # update p_sig
+            self.p_sig = self.get_new_p_sig()
+
+            # update p_c
+            self.p_c = self.get_new_p_c()
+
+            # update C
+            self.cov = self.get_new_C()
+            self.sqrt_inv_cov = sqrtm(self.cov.inverse()) # torch has no C^(-1/2) natively 
+            
+            # update sigma
+            self.sigma = self.get_new_sig()
+
+        print('Convergence criterium reached!')
+        print('The best achieved fitness in the last generation was {0:1.4f}'.format(self.fitness[0]))
+        print('The median fitness of the last generation was {0:1.4f}'.format(self.fitness[int(len(self.fitness)//2)]))
+        return self.cur_pop[0]
+    
+    def get_new_p_sig(self):
+        '''
+        Compute new evo path for sigma
+        '''
+        p_sig = (1 - self.c_sig) * self.p_sig + np.sqrt(1 - (1 - self.c_sig)**2) * np.sqrt(self.mu_w) * self.sqrt_inv_cov * (self.mean - self.old_mean) / self.sigma
+
+        return p_sig    
+
+    def get_new_p_c(self):
+        '''
+        Compute new evo path for covariance matrix
+        '''
+        # compute indicator function
+        self.norm_sig = np.sqrt(torch.sum(self.p_sig ** 2))
+        if self.norm_sig >= 0 and self.norm_sig <= 1.5 * np.sqrt(self.nbr_params):
+            self.indic = 1
+        else:
+            self.indic = 0
+        
+        # update p_c
+        p_c = (1 - self.c_c) * self.p_c + self.indic * np.sqrt(1 - (1 - self.c_c)**2) * np.sqrt(self.mu_w) * (self.mean - self.old_mean) / self.sigma 
+        
+        return p_c
+
+    def get_new_C(self):
+        '''
+        Update covariance matrix
+        '''
+        self.c_s = (1 - self.indic * self.norm_sig ** 2) * self.c_1 * self.c_c * (2 - self.c_c)
+        old_term = (1 - self.c_1 - self.c_mu + self.c_s) * self.cov
+
+        rank_one = self.c_1 * torch.ger(self.p_c, self.p_c)
+
+        rank_mu = torch.zeros((self.nbr_params, self.nbr_params))
+        scaled_diff = (self.cur_pop[:self.mu] - self.old_mean) / self.sigma
+
+        for i in range(self.mu):
+            rank_mu += self.weights[i] * torch.ger(scaled_diff[i], scaled_diff[i])
+        rank_mu *= self.c_mu
+
+        next_cov = old_term + rank_one + rank_mu
+
+        return next_cov
+
+    def get_new_sig(self):
+        '''
+        Update step size sigma
+        '''
+        sig = self.sigma * np.exp(self.c_sig / self.d_sig * ( torch.sum(self.p_sig ** 2) / (np.sqrt(self.nbr_params) - 0.25 / np.sqrt(self.nbr_params)) - 1))
+        
+        return sig
+    
+    def get_sample(self):
+        '''
+        Samples pop_size params from N(self.mean, self.cov)
+        '''
+
+        self.dist = torch.distributions.multivariate_normal.MultivariateNormal(loc=self.mean, covariance_matrix=self.cov)
+
+        sample = self.dist.rsample(sample_shape=torch.Size([self.pop_size]))
+
+        return sample
+        
+    def convergence_test(self):
+        '''
+        Test wether convergence is reached.
+        Convergence is defined as best_fitness <= stop_fitness and median_fitness <= stop_median_fitness
+        '''
+        if self.fitness[0] <= self.stop_fitness and self.fitness[int(len(self.fitness)//2)] <= self.stop_median_fitness:
+            return True
+        else:
+            return False
+
+
+class CMA_ES_old:
     
     def __init__(self, model_class, vis_model, mdn_rnn, model_dir, ctrl_device='cpu', model_kwargs={}, env_id='CarRacing-v0', num_parallel_agents=4, pop_size=1000, selection_pressure=0.1):
 
