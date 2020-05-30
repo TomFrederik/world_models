@@ -150,7 +150,7 @@ def train(config):
         layer_str += str(mdn_layers[i])+'_'
 
 
-    id_str = 'mdnrnn_epochs_{}_lr_{}_layers_{}temp_{}_schedsteps_{}'.format(epochs, learning_rate, layer_str, config.temp, sched_steps, time())
+    id_str = 'better_mdnrnn_epochs_{}_lr_{}_layers_{}temp_{}_schedsteps_{}'.format(epochs, learning_rate, layer_str, config.temp, sched_steps, time())
     
     writer = SummaryWriter(model_dir + id_str)
 
@@ -164,8 +164,8 @@ def train(config):
 
     # get data
     print('Loading data..')
-    ac_dir = '/home/tom/disk_1/world_models_data/random_rollouts/'
-    enc_dir = '/home/tom/disk_1/world_models_data/enc_data/'
+    ac_dir = cur_dir + '/data/'
+    enc_dir = cur_dir + '/enc_data/'
     (_,_,ac_files) = os.walk(ac_dir).__next__()
 
     enc_files = [enc_dir + 'encoded_images_' + str(i) + '.npy' for i in range(len(ac_files))]
@@ -209,7 +209,7 @@ def train(config):
 
                 # compute loss
                 loss = mdn_loss(input=batch_input, target=batch_input[:,1:,:32], coeff=coeff, mean=mean, var=var)
-                #print(loss.item())
+                print(loss.item())
                 # backward pass
                 loss.backward()
 
@@ -232,7 +232,6 @@ def train(config):
                     writer.add_scalar('training loss',
                                 running_loss / 10,
                                 epoch * batches.shape[0] + file_run_ctr + step)
-                    writer.flush()
                     print('At epoch {0:5d}, step {1:5d}, the loss is {2:4.10f}'.format(epoch+1, epoch * batches.shape[0] + file_run_ctr + step+1, running_loss/10))
                     running_loss = 0
         

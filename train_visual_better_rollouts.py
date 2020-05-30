@@ -18,6 +18,7 @@ import numpy as np
 import os
 import gc
 import functools as ft
+import numpy as np
 
 # my modules
 import modules
@@ -77,13 +78,13 @@ def train_visual(config):
     if deterministic:
         id_str = 'deterministic_visual_epochs_{}'.format(epochs)
     else:
-        id_str = 'variational_visual_epochs_{}'.format(epochs)
+        id_str = 'better_variational_visual_epochs_{}'.format(epochs)
     
     cur_dir = os.path.dirname(os.path.realpath(__file__))
     log_dir = cur_dir+config['model_dir'] +id_str+'/lr_{}/'.format(learning_rate)
-    (_,_,files) = os.walk(log_dir).__next__()
+    (_,dirs,files) = os.walk(log_dir).__next__()
 
-    run_id = 'run_' + str(len(files))
+    run_id = 'run_' + str(len(dirs))
     log_dir = log_dir + run_id
     writer = SummaryWriter(log_dir)
     
@@ -105,7 +106,7 @@ def train_visual(config):
     
     # get data
     print('Loading data..')
-    data_dir = '/home/tom/disk_1/world_models_data/random_rollouts/'
+    data_dir = '/home/tom/disk_1/world_models_data/better_rollouts/'
     (_,_,files) = os.walk(data_dir).__next__()
     files = [data_dir + file for file in files]
     
@@ -117,13 +118,14 @@ def train_visual(config):
     torch.save(model.state_dict(), log_dir+'/model.pt')
 
 def train(model, deterministic, optimizer, scheduler, criterion, writer, files, batch_size, device, epochs, log_dir):
+    
     print('Starting training...')
     log_ctr = 0
     running_loss = 0
-        
+    
     for file_idx, file in enumerate(files):
-
-        print('Getting batches of file {}...'.format(file_idx+1))
+        
+        print('Getting batches of file {}...'.format(file_idx+1))        
         data = np.load(file, allow_pickle = True)
         batches = np.array(get_batches(data[:,1,:], batch_size)) # only look at observations
         # shape is e.g. (781, 128, 3, 96, 96) = (nbr_batches, batch_size, C_in, H, W)
@@ -167,7 +169,7 @@ def train(model, deterministic, optimizer, scheduler, criterion, writer, files, 
                 optimizer.step()
                 
                 # update lr
-                #scheduler.step()
+                scheduler.step()
 
                 ###
                 # logging
@@ -218,7 +220,7 @@ if __name__ == "__main__":
     parser.add_argument('--deconv_layers', type=int, default=[[128, 4], [64,4], [32,4], [8,4], [3,6]], help='List of Deconv Layers in the format [[out_0, kernel_size_0], [out_1, kernel_size_1], ...]')
     parser.add_argument('--batch_size', type=int, default=512, help='Number of examples to process in a batch')
     parser.add_argument('--learning_rate', type=float, default=3.6481e-3, help='Learning rate')
-    parser.add_argument('--epochs', type=int, default=5, help='Number of epochs')
+    parser.add_argument('--epochs', type=int, default=2, help='Number of epochs')
     parser.add_argument('--latent_dim', type=int, default=32, help="Dimension of the latent space")
     parser.add_argument('--model_dir', type=str, default='/models/', help="Relative directory for saving models")
     

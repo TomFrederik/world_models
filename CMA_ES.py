@@ -142,7 +142,7 @@ class CMA_ES:
 
             print('Just completed step {0:4d}, average fitness of last step was {1:4.5f}'.format(ctr, mean_fitness))
             print('Saving best candidate..')
-            torch.save(global_best_candidate, f=model_dir+'/best_candidate.pt')
+            torch.save(global_best_params, f=model_dir+'/best_candidate.pt')
             print('Saving covariance and mean..')
             torch.save(self.mean, f=model_dir+'/mean.pt')
             torch.save(self.cov, f=model_dir+'/cov.pt')

@@ -12,9 +12,7 @@ import ray
 
 def main(config):
 
-    cur_dir = os.path.dirname(os.path.realpath(__file__))
-
-    data_dir = cur_dir + config.data_path
+    data_dir = config.data_path
     
     env = gym.make('CarRacing-v0')
 
@@ -72,8 +70,8 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
 
     # Model params
-    parser.add_argument('--nbr_rollouts', type=int, default=1000)
-    parser.add_argument('--data_path', type=str, default='/data/' )
+    parser.add_argument('--nbr_rollouts', type=int, default=8200)
+    parser.add_argument('--data_path', type=str, default='/home/tom/disk_1/world_models_data/random_rollouts/' )
     parser.add_argument('--set_size', type=int, default=100)
 
     config = parser.parse_args()

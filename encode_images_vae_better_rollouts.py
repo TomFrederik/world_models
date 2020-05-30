@@ -83,9 +83,11 @@ def main(config):
     cur_dir = os.path.dirname(os.path.realpath(__file__))
 
     model_dir = cur_dir + '/models/'
-    data_dir = '/home/tom/disk_1/world_models_data/random_rollouts/'
-    enc_data_dir = '/home/tom/disk_1/world_models_data/enc_data/'
+    data_dir = '/home/tom/disk_1/world_models_data/better_rollouts/'
+    enc_data_dir = 'home/tom/disk_1/world_models_data/better_enc_data/'
 
+    (_,_,model_files) = os.walk(model_dir).__next__()
+    (_,_,data_files) = os.walk(data_dir).__next__()
 
     # set up model
     encoder = modules.Encoder(input_dim, conv_layers, z_dim)
@@ -94,7 +96,7 @@ def main(config):
     model = modules.VAE(encoder, decoder, encode_only=True).to(device)
     
     # load model
-    model_file = 'variational_visual_epochs_5/lr_0.0036481/run_0/model.pt' #model_files[0]
+    model_file = 'better_variational_visual_epochs_2/lr_0.0036481/'$$$'.pt' #model_files[0]
     model.load_state_dict(torch.load(model_dir + model_file, map_location=torch.device(device)))
 
     # set to eval mode
@@ -104,7 +106,7 @@ def main(config):
     print('Loading data..')
     (_,_,files) = os.walk(data_dir).__next__()
 
-    files = sorted([data_dir + file for file in files])
+    files = sorted([data_dir + file for file in data_files])
 
     print('Starting run...')
 

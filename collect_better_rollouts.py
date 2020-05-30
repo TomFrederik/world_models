@@ -12,6 +12,22 @@ import ray
 import modules
 import torch
 from time import time
+import gc
+
+def set_params(model, params):
+    last_id = 0
+    for layer in model.layers:
+        weight_shape = layer.weight.shape
+        num_weights = weight_shape[0]*weight_shape[1]
+        bias_shape = layer.bias.shape
+        num_biases = bias_shape[0]
+        
+        layer.weight.data = torch.reshape(params[last_id:last_id+num_weights], weight_shape).float()
+        last_id += num_weights
+        layer.bias.data = torch.reshape(params[last_id:last_id+num_biases], bias_shape).float()
+        last_id += num_biases
+    
+    return model
 
 @ray.remote
 def run_agent(model, id, env_id, ctrl_device, obs_device, total_start_time, vis_model, mdn_model):
@@ -25,7 +41,6 @@ def run_agent(model, id, env_id, ctrl_device, obs_device, total_start_time, vis_
         start_time = time()    
         
         obs = env.reset()
-        observations.append(obs)
         obs = np.reshape(obs, (1,3,96,96))
         obs = torch.from_numpy(obs).to(obs_device)
         obs = obs.float() / 255
@@ -40,9 +55,12 @@ def run_agent(model, id, env_id, ctrl_device, obs_device, total_start_time, vis_
 
         action = model(ctrl_in)
         action = torch.squeeze(action)
-        actions.append(action.numpy())
 
         while not done:
+            action = model(ctrl_in)
+            torch.cuda.empty_cache()
+            action = torch.squeeze(action)
+            actions.append(action.numpy())
             
             obs, rew, done, _ = env.step(action.cpu().detach().numpy().astype(int))
             cum_rew += rew
@@ -71,10 +89,7 @@ def run_agent(model, id, env_id, ctrl_device, obs_device, total_start_time, vis_
             ctrl_in = torch.cat((vis_out,mdn_hidden), dim=1).to(ctrl_device)
 
             torch.cuda.empty_cache()
-            action = model(ctrl_in)
-            torch.cuda.empty_cache()
-            action = torch.squeeze(action)
-            actions.append(action.numpy())
+            
 
             # inc step counter
             step += 1
@@ -108,6 +123,8 @@ def main(config):
     ctrl_layers = config.ctrl_layers
     nbr_rollouts = config.nbr_rollouts
     env_id = 'CarRacing-v0'
+    set_size = config.set_size
+    num_parallel_agents = config.num_parallel_agents
     
     if torch.cuda.is_available():
         device = 'cuda:0'
@@ -118,7 +135,7 @@ def main(config):
 
     cur_dir = os.path.dirname(os.path.realpath(__file__))
 
-    data_dir = cur_dir + config.data_path
+    data_dir = config.data_path
 
     model_dir = cur_dir + '/models/'
     model_path = model_dir + 'ctrl_results/run_0/best_candidate.pt'
@@ -145,60 +162,37 @@ def main(config):
         'layers':ctrl_layers,
         'ac_dim':3
     }
-
-    ctrl_model = modules.Controller(**ctrl_kwargs)
-    ctrl.load_state_dict(torch.load(model_path, map_location=torch.device(device)))
-    
-    env = gym.make(env_id)
+    ctrl_params = torch.load(model_path, map_location=torch.device(device))
+    ctrl_model = modules.Controller(**ctrl_kwargs).to(device)
+    ctrl_model = set_params(ctrl_model, ctrl_params)
+    ctrl_model.eval()
 
     total_start_time = time()
 
-    rollouts = [run_agent.remote(ctrl_model, id, env_id, ctrl_device, device, total_start_time, vis_model, mdn_model) for id in np.arange(nbr_rollouts)]
+    if num_parallel_agents > 1:
+        ray.init(num_cpus=num_parallel_agents, 
+                object_store_memory=1024*1024*1024*num_parallel_agents,
+                redis_max_memory=1024*1024*200
+        )
 
-    for counter in range(config.nbr_rollouts):
-
-        # reset rollout array to free up space
-        if counter > 0 and counter % config.set_size == 0:
-            id = time()
-            np.save(data_dir + 'random_rollouts_{}.npy'.format(id), np.array(rollouts), allow_pickle=True)
-            rollouts = []
-
-        start_time = time()
-
-        done = False # reset done condition
-        obs = env.reset() # reset environment and save inital observation
-
-        # all actions and observations for one rollout
-        actions = []
-        observations = []
-
-        iter = 1
-        while not done:
-            # one rollout
-            #print('Step number {} in rollout {}'.format(iter, counter+1))
-
-            # take random action
-            act = env.action_space.sample()
-            obs, rew, done, info = env.step(act) 
-
-            # save action and observation
-            actions.append(act)
-            observations.append(obs)
-            iter += 1
-
-        # append rollout
-        rollouts.append(np.array([actions, observations]))
     
-        counter += 1
-        print('Generated {} tracks so far'.format(counter))
-        print('This track took {} seconds to simulate.'.format(time()-start_time))
 
-    if len(rollouts)>0:
+    if nbr_rollouts % set_size != 0:
+        print('Uneven length! Last few rollouts have been discarded')
+        nbr_rollouts -= nbr_rollouts % set_size
+    
+    for i in range(0, nbr_rollouts, set_size):
         id = time()
-        np.save(data_dir + 'random_rollouts_{}.npy'.format(id), np.array(rollouts), allow_pickle=True)
-
-    env.close()
-
+        rollout_futures = [run_agent.remote(ctrl_model, id, env_id, ctrl_device, device, total_start_time, vis_model, mdn_model) for id in np.arange(i, i+set_size)]
+        rollouts = []
+        for j in range(set_size):
+            rollouts.append(ray.get(rollout_futures[j]))
+        np.save(data_dir + 'better_rollouts_{}.npy'.format(id), np.array(rollouts), allow_pickle=True)
+        print('\n\nSaved {} rollouts so far\n\n'.format(i + set_size))
+        del rollouts
+        gc.collect()
+    
+    
 
 
 if __name__ == "__main__":
@@ -208,7 +202,7 @@ if __name__ == "__main__":
 
     # Model params
     parser.add_argument('--nbr_rollouts', type=int, default=1000)
-    parser.add_argument('--data_path', type=str, default='/data/' )
+    parser.add_argument('--data_path', type=str, default='/home/tom/disk_1/world_models_data/better_rollouts/' )
     parser.add_argument('--set_size', type=int, default=100)
     parser.add_argument('--input_dim', type=tuple, default=(3,96,96), help='Dimensionality of input picture')
     parser.add_argument('--conv_layers', type=int, default=[[32, 4], [64,4], [128,4], [256,4]], help='List of Conv Layers in the format [[out_0, kernel_size_0], [out_1, kernel_size_1], ...]')
@@ -219,6 +213,10 @@ if __name__ == "__main__":
     parser.add_argument('--mdn_layers', type=int, default=[100,100,50,50], help='List of layers in the MDN')
     parser.add_argument('--temp', type=float, default=1, help='Temperature for mixture model')
     parser.add_argument('--ctrl_layers', type=int, default=[], help='List of layers in the Control network')
+    parser.add_argument('--num_parallel_agents', type=int, default=12)
+    parser.add_argument('--latent_dim', type=int, default=32, help="Dimension of the latent space")
+
+
 
     config = parser.parse_args()
     
