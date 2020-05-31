@@ -326,7 +326,7 @@ def train(config):
     # load mdn model
     mdn_params = {'input_dim':z_dim+3, 'lstm_units':lstm_units, 'lstm_layers':lstm_layers, 'nbr_gauss':nbr_gauss, 'mdn_layers':mdn_layers, 'temp':temp}
     mdn_model = modules.MDN_RNN(**mdn_params).to(device)
-    mdn_model_file = 'beter_mdnrnn_epochs_20/lr_0.001/temp_/run_/model.pt'
+    mdn_model_file = 'beter_mdnrnn_epochs_20/lr_0.001/temp_0.7/run_0/model.pt'
     mdn_model.load_state_dict(torch.load(model_dir + mdn_model_file, map_location=torch.device(device)))
     mdn_model.eval()
 

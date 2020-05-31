@@ -188,7 +188,7 @@ def train(config):
     enc_dir = '/home/tom/disk_1/world_models_data/better_enc_data/'
     (_,_,ac_files) = os.walk(ac_dir).__next__()
 
-    enc_files = [enc_dir + 'encoded_images_' + str(i) + '.npy' for i in range(len(ac_files))]
+    enc_files = [enc_dir + 'better_encoded_images_' + str(i) + '.npy' for i in range(len(ac_files))]
     ac_files = sorted([ac_dir + file for file in ac_files])
 
     print('Starting training...')
