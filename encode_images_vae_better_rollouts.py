@@ -84,7 +84,7 @@ def main(config):
 
     model_dir = cur_dir + '/models/'
     data_dir = '/home/tom/disk_1/world_models_data/better_rollouts/'
-    enc_data_dir = 'home/tom/disk_1/world_models_data/better_enc_data/'
+    enc_data_dir = '/home/tom/disk_1/world_models_data/better_enc_data/'
 
     (_,_,model_files) = os.walk(model_dir).__next__()
     (_,_,data_files) = os.walk(data_dir).__next__()
@@ -96,7 +96,7 @@ def main(config):
     model = modules.VAE(encoder, decoder, encode_only=True).to(device)
     
     # load model
-    model_file = 'better_variational_visual_epochs_2/lr_0.0036481/'$$$'.pt' #model_files[0]
+    model_file = 'better_variational_visual_epochs_1/lr_0.0036481/run_0/model.pt' #model_files[0]
     model.load_state_dict(torch.load(model_dir + model_file, map_location=torch.device(device)))
 
     # set to eval mode
@@ -147,7 +147,7 @@ def main(config):
 
         print('Saving data of file {}'.format(file_idx+1))
         
-        np.save(enc_data_dir+'encoded_images_{}.npy'.format(file_idx), file_out)
+        np.save(enc_data_dir+'better_encoded_images_{}.npy'.format(file_idx), file_out)
         del file_out
     
     

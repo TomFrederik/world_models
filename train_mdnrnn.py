@@ -26,32 +26,43 @@ PI = 3.14159265359
 
 def mdn_loss(input, target, coeff, mean, var):
 
-    bs = input.shape[0] #batch size
-    #print('var 3')
-    #print(var[0,0])
+    if mean.is_cuda:
+        device = 'cuda:0'
+    else:
+        device = 'cpu'
+    
+    #print('var')
+    #print(var)
+    
     # inverse covariance matrix, is diagonal so is simple
     inv_var = 1/var
 
-    # copy target to process for all kernels at the same time
-    dummy = torch.zeros_like(mean)
-    for i in range(dummy.shape[2]):
-        dummy[:,:,i,:] = target
-    target = dummy
-    del dummy
-
+    #print('inv var')
+    #print(inv_var, inv_var.shape)
+    
     # compute gaussians
-    diff_sq = (target - mean)**2
+    mean = mean.reshape((mean.shape[2], mean.shape[0], mean.shape[1], mean.shape[3])) # (5, batch_size, seq_len, 32)
+    #print('mean')
+    #print(mean.shape)
+    
+    diff_sq = torch.add(mean, -target)**2
+    diff_sq = diff_sq.reshape((diff_sq.shape[1], diff_sq.shape[2], diff_sq.shape[0], diff_sq.shape[3]))
+    diff_sq = torch.mul(diff_sq, inv_var)
+    diff_sq = torch.sum(diff_sq, dim=-1)
     #print('diff_sq:',diff_sq, diff_sq.shape)
-    exponent = -0.5 * inv_var**64 * torch.sum(diff_sq, dim=-1) 
+    
+    exponent = -0.5 * diff_sq
     #print('exponent')
     #print(exponent)
     #print(exponent.shape)
     
-    #print('inv var')
-    #print(inv_var, inv_var.shape)
-    gaussian = 1/((2*PI)**16) * inv_var**32 * torch.exp(exponent)
+    det_inv_var = torch.prod(inv_var, dim=-1)
+    
+    gaussian = 1/((2*PI)**16) * det_inv_var * torch.exp(exponent)
     #print('gaussian')
     #print(gaussian)
+    #print('exponential')
+    #print(torch.exp(exponent))
     #print(gaussian.shape)
     # multiply by coefficients and sum over all gaussians
     likelihood = torch.sum(coeff * gaussian, dim=-1) # shape is now (batch_size, seq_len)
@@ -135,6 +146,10 @@ def train(config):
     batch_size = config.batch_size
     learning_rate = config.learning_rate
     epochs = config.epochs
+
+    if batch_size > 100:
+        raise ValueError('batch_size should be equal or less than 100, but is {}'.format(batch_size))
+
     if torch.cuda.is_available():
         device = 'cuda:0'
     else:
@@ -150,16 +165,21 @@ def train(config):
         layer_str += str(mdn_layers[i])+'_'
 
 
-    id_str = 'mdnrnn_epochs_{}_lr_{}_layers_{}temp_{}_schedsteps_{}'.format(epochs, learning_rate, layer_str, config.temp, sched_steps, time())
+    id_str = 'mdnrnn_epochs_{}/lr_{}/temp_{}'.format(epochs, learning_rate, config.temp)
     
-    writer = SummaryWriter(model_dir + id_str)
+    log_dir = model_dir + id_str
+    (_,dirs,_) = os.walk(log_dir).__next__()
+    run_id = 'run_' + str(len(dirs))
+    log_dir = log_dir + '/' + run_id
+
+    writer = SummaryWriter(log_dir)
 
     # set up mdn model
     mdn_params = {'input_dim':z_dim+3, 'lstm_units':lstm_units, 'lstm_layers':lstm_layers, 'nbr_gauss':nbr_gauss, 'mdn_layers':mdn_layers, 'temp':temp}
     mdn_model = modules.MDN_RNN(**mdn_params).to(device)
 
     # init optimizer and scheduler
-    optimizer = optim.Adam(mdn_model.parameters(), lr = learning_rate)
+    optimizer = optim.Adam(filter(lambda p: p.requires_grad, mdn_model.parameters()), lr = learning_rate)
     scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=sched_steps, gamma=0.95)
 
     # get data
@@ -173,8 +193,8 @@ def train(config):
 
     print('Starting training...')
     log_ctr = 0
+    global_ctr = 0
     running_loss = 0
-    file_run_ctr = 0
     file_idx = 0
 
     for obs_file, ac_file in zip(enc_files,ac_files):
@@ -186,8 +206,9 @@ def train(config):
         ac_data = np.load(ac_file, allow_pickle = True)[:,0,:]
         obs_batches = np.array(get_obs_batches(obs_data, batch_size)) # only look at observations
         act_batches = np.array(get_act_batches(ac_data, batch_size)) # only look at actions
-        batches = np.append(obs_batches, act_batches, axis=-1) # is of shape (nbr_batches, batch_size, nbr_frames, z_dim+ac_dim)
-        
+        batches_in = np.append(obs_batches[:,:,:-1,:], act_batches[:,:,1:,:], axis=-1) # is of shape (nbr_batches, batch_size, nbr_frames, z_dim+ac_dim)
+        batches_target = torch.from_numpy(obs_batches[:,:,1:,:]).float()
+
         # free up memory
         del obs_batches
         del act_batches
@@ -196,11 +217,10 @@ def train(config):
 
         for epoch in range(epochs):
             
-            for step, batch_input in enumerate(batches):
-                
+            for step in range(batches_in.shape[0]):
                 # make batch tensor and float
-                batch_input = torch.from_numpy(batch_input).float().to(device)
-            
+                batch_input = torch.from_numpy(batches_in[step]).float().to(device)
+                
                 # set grad to zero
                 optimizer.zero_grad()
 
@@ -208,11 +228,14 @@ def train(config):
                 coeff, mean, var = mdn_model.forward(batch_input)
 
                 # compute loss
-                loss = mdn_loss(input=batch_input, target=batch_input[:,1:,:32], coeff=coeff, mean=mean, var=var)
+                loss = mdn_loss(input=batch_input, target=batches_target[step].to(device), coeff=coeff, mean=mean, var=var)
                 #print(loss.item())
+                
                 # backward pass
+                #time1 = time()
                 loss.backward()
-
+                #print('time: ', time()-time1)
+                
                 # updating weights
                 optimizer.step()
                 
@@ -226,25 +249,23 @@ def train(config):
 
                 # inc log counter
                 log_ctr += 1
+                global_ctr += 1
             
                 if log_ctr % 10 == 0:
                     # log the losses
                     writer.add_scalar('training loss',
                                 running_loss / 10,
-                                epoch * batches.shape[0] + file_run_ctr + step)
+                                global_ctr)
                     writer.flush()
-                    print('At epoch {0:5d}, step {1:5d}, the loss is {2:4.10f}'.format(epoch+1, epoch * batches.shape[0] + file_run_ctr + step+1, running_loss/10))
+                    print('At epoch {0:5d}, step {1:5d}, global_step {2:5d}, the loss is {3:4.10f}'.format(epoch+1, step+1, global_ctr, running_loss/10))
                     running_loss = 0
         
-        # inc step counter across files
-        file_run_ctr += batches.shape[0]*epochs
-        
         #free memory for next file
-        del batches
+        del batches_in
 
         # save progress so far
         print('Saving Model..')
-        torch.save(mdn_model.state_dict(), cur_dir + config.model_dir + id_str + '.pt')
+        torch.save(mdn_model.state_dict(), log_dir + '/model.pt')
         print("Model saved.")
         file_idx += 1
 
@@ -263,7 +284,7 @@ if __name__ == "__main__":
     parser.add_argument('--lstm_units', type=int, default=256, help='Number of LSTM units per layer')
     parser.add_argument('--nbr_gauss', type=int, default=5, help='Number of gaussians for MDN')
     parser.add_argument('--mdn_layers', type=int, default=[100,100,50,50], help='List of layers in the MDN')
-    parser.add_argument('--temp', type=float, default=1, help='Temperature for mixture model')
+    parser.add_argument('--temp', type=float, default=2, help='Temperature for mixture model')
     parser.add_argument('--batch_size', type=int, default=10, help='Number of examples to process in a batch')
     parser.add_argument('--learning_rate', type=float, default=1e-3, help='Learning rate')
     parser.add_argument('--epochs', type=int, default=20, help='Number of epochs')

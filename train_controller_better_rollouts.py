@@ -319,14 +319,14 @@ def train(config):
     vis_model = modules.VAE(encoder, decoder, encode_only=True).to(device)
     
     # load visual model
-    vis_model_file = 'better_variational_visual_epochs_2/lr_0.0036481/'$$$'.pt'
+    vis_model_file = 'better_variational_visual_epochs_1/lr_0.0036481/run_0/model.pt'
     vis_model.load_state_dict(torch.load(model_dir + vis_model_file, map_location=torch.device(device)))
     vis_model.eval()
     
     # load mdn model
     mdn_params = {'input_dim':z_dim+3, 'lstm_units':lstm_units, 'lstm_layers':lstm_layers, 'nbr_gauss':nbr_gauss, 'mdn_layers':mdn_layers, 'temp':temp}
     mdn_model = modules.MDN_RNN(**mdn_params).to(device)
-    mdn_model_file = 'beter_mdnrnn_epochs_20_lr_0.001_layers_100_100_50_50_schedsteps_100.pt'
+    mdn_model_file = 'beter_mdnrnn_epochs_20/lr_0.001/temp_/run_/model.pt'
     mdn_model.load_state_dict(torch.load(model_dir + mdn_model_file, map_location=torch.device(device)))
     mdn_model.eval()
 

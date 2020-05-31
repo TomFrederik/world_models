@@ -220,7 +220,7 @@ if __name__ == "__main__":
     parser.add_argument('--deconv_layers', type=int, default=[[128, 4], [64,4], [32,4], [8,4], [3,6]], help='List of Deconv Layers in the format [[out_0, kernel_size_0], [out_1, kernel_size_1], ...]')
     parser.add_argument('--batch_size', type=int, default=512, help='Number of examples to process in a batch')
     parser.add_argument('--learning_rate', type=float, default=3.6481e-3, help='Learning rate')
-    parser.add_argument('--epochs', type=int, default=2, help='Number of epochs')
+    parser.add_argument('--epochs', type=int, default=1, help='Number of epochs')
     parser.add_argument('--latent_dim', type=int, default=32, help="Dimension of the latent space")
     parser.add_argument('--model_dir', type=str, default='/models/', help="Relative directory for saving models")
     

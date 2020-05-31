@@ -29,7 +29,7 @@ def set_params(model, params):
     
     return model
 
-@ray.remote
+@ray.remote(num_gpus=0.0625)
 def run_agent(model, id, env_id, ctrl_device, obs_device, total_start_time, vis_model, mdn_model):
     with torch.no_grad():
         env = gym.make(env_id)
@@ -60,7 +60,7 @@ def run_agent(model, id, env_id, ctrl_device, obs_device, total_start_time, vis_
             action = model(ctrl_in)
             torch.cuda.empty_cache()
             action = torch.squeeze(action)
-            actions.append(action.numpy())
+            actions.append(action.cpu().numpy())
             
             obs, rew, done, _ = env.step(action.cpu().detach().numpy().astype(int))
             cum_rew += rew
@@ -138,7 +138,7 @@ def main(config):
     data_dir = config.data_path
 
     model_dir = cur_dir + '/models/'
-    model_path = model_dir + 'ctrl_results/run_0/best_candidate.pt'
+    model_path = model_dir + 'ctrl_results/run_1/best_candidate.pt'
     
     # set up visual model
     encoder = modules.Encoder(input_dim, conv_layers, z_dim)
@@ -146,14 +146,14 @@ def main(config):
     vis_model = modules.VAE(encoder, decoder, encode_only=True).to(device)
     
     # load visual model
-    vis_model_file = 'variational_visual_epochs_1_lr_0.001/1588429800.pt'
+    vis_model_file = 'variational_visual_epochs_5/lr_0.0036481/run_0/model.pt'
     vis_model.load_state_dict(torch.load(model_dir + vis_model_file, map_location=torch.device(device)))
     vis_model.eval()
     
     # load mdn model
     mdn_params = {'input_dim':z_dim+3, 'lstm_units':lstm_units, 'lstm_layers':lstm_layers, 'nbr_gauss':nbr_gauss, 'mdn_layers':mdn_layers, 'temp':temp}
     mdn_model = modules.MDN_RNN(**mdn_params).to(device)
-    mdn_model_file = 'mdnrnn_epochs_20_lr_0.001_layers_100_100_50_50_schedsteps_100.pt'
+    mdn_model_file = 'mdnrnn_epochs_20/lr_0.001/temp_0.7/run_0/model.pt'
     mdn_model.load_state_dict(torch.load(model_dir + mdn_model_file, map_location=torch.device(device)))
     mdn_model.eval()
 
@@ -164,21 +164,21 @@ def main(config):
     }
     ctrl_params = torch.load(model_path, map_location=torch.device(device))
     ctrl_model = modules.Controller(**ctrl_kwargs).to(device)
-    ctrl_model = set_params(ctrl_model, ctrl_params)
+    ctrl_model = set_params(ctrl_model, ctrl_params).to(device)
     ctrl_model.eval()
 
     total_start_time = time()
 
-    if num_parallel_agents > 1:
-        ray.init(num_cpus=num_parallel_agents, 
-                object_store_memory=1024*1024*1024*num_parallel_agents,
-                redis_max_memory=1024*1024*200
-        )
-
+    ray.init(num_cpus=num_parallel_agents,
+            object_store_memory=1024*1024*1024*20,
+            redis_max_memory=1024*1024*200
+    )
+    
     
 
     if nbr_rollouts % set_size != 0:
         print('Uneven length! Last few rollouts have been discarded')
+    
         nbr_rollouts -= nbr_rollouts % set_size
     
     for i in range(0, nbr_rollouts, set_size):
@@ -213,7 +213,7 @@ if __name__ == "__main__":
     parser.add_argument('--mdn_layers', type=int, default=[100,100,50,50], help='List of layers in the MDN')
     parser.add_argument('--temp', type=float, default=1, help='Temperature for mixture model')
     parser.add_argument('--ctrl_layers', type=int, default=[], help='List of layers in the Control network')
-    parser.add_argument('--num_parallel_agents', type=int, default=12)
+    parser.add_argument('--num_parallel_agents', type=int, default=5)
     parser.add_argument('--latent_dim', type=int, default=32, help="Dimension of the latent space")
 
 

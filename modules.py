@@ -305,7 +305,7 @@ class MDN(nn.Module):
         self.layers.append(nn.Linear(in_features=input_dim, out_features=layers[0]))
         for i in range(len(layers)-1):
             self.layers.append(nn.Linear(in_features=layers[i], out_features=layers[i+1]))
-        self.layers.append(nn.Linear(in_features=layers[-1], out_features=2*self.nbr_gauss+self.nbr_gauss*self.out_dim)) # (2 + out_dim) * nbr_gauss
+        self.layers.append(nn.Linear(in_features=layers[-1], out_features=self.nbr_gauss+2*self.nbr_gauss*self.out_dim)) # (2 + out_dim) * nbr_gauss
 
         self.layers = nn.ModuleList(self.layers)
 
@@ -332,21 +332,12 @@ class MDN(nn.Module):
 
         # predict gaussians with temperature modulation
         coeff  = F.softmax(hidden[:,:self.nbr_gauss] / self.temp, dim=1) # mixture coefficients
-        var  = torch.exp(hidden[:,self.nbr_gauss:2*self.nbr_gauss]) * self.temp # variances
+        var  = torch.exp(hidden[:,self.nbr_gauss:self.nbr_gauss*self.out_dim+self.nbr_gauss]) * self.temp # variances
+        var = var.reshape((*var.shape[:-1], self.nbr_gauss, var.shape[-1]//self.nbr_gauss))
         #print('var 1')
-        #print(var)
-        '''
-        dummy = torch.zeros((var.shape[0],self.nbr_gauss, self.nbr_gauss))
-        for i in range(var.shape[0]):
-            dummy[i] = torch.diag(var[i])
-        var = dummy
-        del dummy
-        #print('var 2')
-        #print(var)
-        '''
-        mean  = hidden[:,2*self.nbr_gauss:] # means
-        mean = torch.reshape(mean, (mean.shape[0], self.nbr_gauss, mean.shape[1]//self.nbr_gauss)) # e.g. (10,5,32)
         
+        mean  = hidden[:,self.nbr_gauss + self.nbr_gauss*self.out_dim:] # means
+        mean = torch.reshape(mean, (mean.shape[0], self.nbr_gauss, mean.shape[1]//self.nbr_gauss)) # e.g. (10,5,32)
         return coeff, mean, var
 
 class MDN_RNN(nn.Module):
@@ -386,36 +377,19 @@ class MDN_RNN(nn.Module):
             h_0 = torch.zeros(self.lstm_layers, input.shape[0], self.lstm_units).to(device)
             c_0 = torch.zeros(self.lstm_layers, input.shape[0], self.lstm_units).to(device)
         
-        if self.training:
-            # in training mode, the last prediction is not saved because it can't be checked against a ground truth
-            out_shape = (input.shape[0], input.shape[1]-1, self.nbr_gauss)
-        else:
-            out_shape = (input.shape[0], input.shape[1], self.nbr_gauss)
-        
-        coeff_preds = torch.zeros(out_shape)
-        mean_preds = torch.zeros((*out_shape, input.shape[-1]-3))
-        var_preds = torch.zeros(out_shape)
-        #print(coeff_preds.shape) # [1,1,5]
-        #print(mean_preds.shape) # [1,1,5,32]
-        #print(var_preds.shape) # [1,1,5]
-
-        for t in range(out_shape[1]):
-            if t == 0:
-                out_t, (h_t, c_t) = self.lstm(torch.unsqueeze(input[:,t,:], dim=1), (h_0, c_0))
-            else:
-                out_t, (h_t, c_t) = self.lstm(torch.unsqueeze(input[:,t,:], dim=1), (h_t, c_t))
+        # run through lstm
+        out, (h_n, c_n) = self.lstm(input, (h_0, c_0))
             
-            # predict distribution
-            coeff_pred, mean_pred, var_pred = self.mdn(torch.squeeze(h_t, dim=0))
+        # predict distribution
+        coeff_pred, mean_pred, var_pred = self.mdn(out.flatten(start_dim=0, end_dim=1))
+        coeff_pred = coeff_pred.reshape((input.shape[0], input.shape[1], coeff_pred.shape[-1]))
+        mean_pred = mean_pred.reshape((input.shape[0], input.shape[1], *mean_pred.shape[1:]))
+        var_pred = var_pred.reshape((input.shape[0], input.shape[1], *var_pred.shape[1:]))
 
-            # save distribution
-            coeff_preds[:,t,:] = coeff_pred
-            mean_preds[:,t,:,:] = mean_pred
-            var_preds[:,t,:] = var_pred
         if self.training:
-            return coeff_preds, mean_preds, var_preds
+            return coeff_pred, mean_pred, var_pred
         else:
-            return h_t
+            return h_n
 
 
     def intial_state(self, batch_size):
