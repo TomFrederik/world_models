@@ -32,7 +32,7 @@ def count_parameters(model):
 
 class CMA_ES:
 
-    def __init__(self, nbr_params, fitness_func, stop_fitness=0.01, stop_median_fitness=0.01, pop_size=None, mu=None, weights=None, sigma=0.5, mean=None):
+    def __init__(self, nbr_params, fitness_func, start_var=1, stop_fitness=0.01, stop_median_fitness=0.01, pop_size=None, mu=None, weights=None, sigma=0.5, mean=None):
         '''
         params:
         nbr_params - int, n in the algorithm, dimension of the search space
@@ -90,8 +90,8 @@ class CMA_ES:
         self.p_c = torch.zeros(nbr_params)
         self.p_sig = torch.zeros(nbr_params)
 
-        self.cov = torch.eye(nbr_params)
-        self.sqrt_inv_cov = torch.eye(nbr_params)
+        self.cov = torch.eye(nbr_params)*start_var
+        self.sqrt_inv_cov = torch.eye(nbr_params)/start_var
 
     def train_until_convergence(self, writer, model_dir):
         '''

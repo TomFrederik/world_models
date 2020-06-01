@@ -284,7 +284,7 @@ if __name__ == "__main__":
     parser.add_argument('--lstm_units', type=int, default=256, help='Number of LSTM units per layer')
     parser.add_argument('--nbr_gauss', type=int, default=5, help='Number of gaussians for MDN')
     parser.add_argument('--mdn_layers', type=int, default=[100,100,50,50], help='List of layers in the MDN')
-    parser.add_argument('--temp', type=float, default=0.7, help='Temperature for mixture model')
+    parser.add_argument('--temp', type=float, default=1, help='Temperature for mixture model')
     parser.add_argument('--batch_size', type=int, default=10, help='Number of examples to process in a batch')
     parser.add_argument('--learning_rate', type=float, default=1e-3, help='Learning rate')
     parser.add_argument('--epochs', type=int, default=20, help='Number of epochs')

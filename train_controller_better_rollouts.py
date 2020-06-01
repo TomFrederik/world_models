@@ -116,7 +116,7 @@ def showcase(vis_model, mdn_model, agent, env_id, obs_device, ctrl_device):
 
             env.close()
 
-@ray.remote#(num_gpus=0.0625)
+@ray.remote(num_gpus=0.0625)
 def run_agent(model, id, env_id, ctrl_device, obs_device, total_start_time, vis_model, mdn_model):
     with torch.no_grad():
         env = gym.make(env_id)
@@ -211,7 +211,7 @@ def fitness(pop, ctrl_kwargs, model_class, env_id, ctrl_device, obs_device, vis_
     fitness = torch.zeros(pop_size)
     
     # list of all the models instantiated with their respective parameters
-    models = [model_class(**ctrl_kwargs) for _ in range(pop_size)]
+    models = [model_class(**ctrl_kwargs).to(ctrl_device) for _ in range(pop_size)]
     for run_id in range(pop_size):
         #load params
         last_id = 0
@@ -221,9 +221,9 @@ def fitness(pop, ctrl_kwargs, model_class, env_id, ctrl_device, obs_device, vis_
             bias_shape = layer.bias.shape
             num_biases = bias_shape[0]
             
-            layer.weight.data = torch.reshape(pop[run_id,last_id:last_id+num_weights], weight_shape).float()
+            layer.weight.data = torch.reshape(pop[run_id,last_id:last_id+num_weights], weight_shape).float().to(ctrl_device)
             last_id += num_weights
-            layer.bias.data = torch.reshape(pop[run_id,last_id:last_id+num_biases], bias_shape).float()
+            layer.bias.data = torch.reshape(pop[run_id,last_id:last_id+num_biases], bias_shape).float().to(ctrl_device)
             last_id += num_biases
 
     
@@ -301,7 +301,7 @@ def train(config):
     # setting up paths
     cur_dir = os.path.dirname(os.path.realpath(__file__))
     model_dir = cur_dir + config.model_dir
-    id_str = 'ctrl_results_better_rollouts'
+    id_str = 'ctrl_results_better_rollouts/start_var_{}'.format(config.start_var)
     
     # init tensorboard
     log_dir = model_dir+id_str+'/'
@@ -326,7 +326,7 @@ def train(config):
     # load mdn model
     mdn_params = {'input_dim':z_dim+3, 'lstm_units':lstm_units, 'lstm_layers':lstm_layers, 'nbr_gauss':nbr_gauss, 'mdn_layers':mdn_layers, 'temp':temp}
     mdn_model = modules.MDN_RNN(**mdn_params).to(device)
-    mdn_model_file = 'beter_mdnrnn_epochs_20/lr_0.001/temp_0.7/run_0/model.pt'
+    mdn_model_file = 'better_mdnrnn_epochs_20/lr_0.001/temp_1/run_0/model.pt'
     mdn_model.load_state_dict(torch.load(model_dir + mdn_model_file, map_location=torch.device(device)))
     mdn_model.eval()
 
@@ -359,7 +359,8 @@ def train(config):
         'nbr_params':nbr_params,
         'fitness_func':fitness_func,
         'stop_fitness':stop_crit,
-        'stop_median_fitness':stop_median_crit
+        'stop_median_fitness':stop_median_crit,
+        'start_var':config.start_var
     }
 
     CMA = CMA_ES(**CMA_parameters)
@@ -411,10 +412,11 @@ if __name__ == "__main__":
     parser.add_argument('--temp', type=float, default=1, help='Temperature for mixture model')
     parser.add_argument('--ctrl_layers', type=int, default=[], help='List of layers in the Control network')
     #parser.add_argument('--pop_size', type=int, default=1500, help='Population size for CMA-ES')
-    parser.add_argument('--num_parallel_agents', type=int, default=10, help='Number of agents run in parallel when evaluating fitness')
+    parser.add_argument('--num_parallel_agents', type=int, default=8, help='Number of agents run in parallel when evaluating fitness')
     #parser.add_argument('--selection_pressure', type=float, default=0.7, help='Percentage of population that survives each iteration')
     parser.add_argument('--stop_crit', type=float, default=0.002, help='Average fitness value that needs to be reached')
     parser.add_argument('--stop_median_crit', type=float, default=0.005, help='Median fitness value that needs to be reached')
+    parser.add_argument('--start_var', type=float, default=10, help='Start variance for cov matrix')
     #parser.add_argument('--batch_size', type=int, default=256, help='Number of examples to process in a batch')
     #parser.add_argument('--learning_rate', type=float, default=1e-3, help='Learning rate')
     #parser.add_argument('--epochs', type=int, default=20, help='Number of epochs')
