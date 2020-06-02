@@ -30,6 +30,7 @@ from datetime import datetime
 import numpy as np
 import os
 import functools
+import cv2
 
 # my modules
 import modules
@@ -66,7 +67,8 @@ def showcase(vis_model, mdn_model, agent, env_id, obs_device, ctrl_device):
             start_time = time()    
             
             obs = env.reset()
-            obs = np.reshape(obs, (1,3,96,96))
+            obs = cv2.resize(np.array(obs), dsize=(64,64))
+            obs = np.reshape(obs, (1,3,64,64))
             obs = torch.from_numpy(obs).to(obs_device)
             obs = obs.float() / 255
             
@@ -92,8 +94,8 @@ def showcase(vis_model, mdn_model, agent, env_id, obs_device, ctrl_device):
                     duration = time()-start_time
                     print('Time since start: {} minutes and {} seconds.'.format(duration//60,duration%60))
                 '''
-
-                obs = np.reshape(obs, (1,3,96,96))
+                obs = cv2.resize(np.array(obs), dsize=(64,64))
+                obs = np.reshape(obs, (1,3,64,64))
                 obs = torch.from_numpy(obs).to(obs_device)
                 obs = obs.float() / 255
                 
@@ -126,7 +128,8 @@ def run_agent(model, id, env_id, ctrl_device, obs_device, total_start_time, vis_
         start_time = time()    
         
         obs = env.reset()
-        obs = np.reshape(obs, (1,3,96,96))
+        obs = cv2.resize(np.array(obs), dsize=(64,64))
+        obs = np.reshape(obs, (1,3,64,64))
         obs = torch.from_numpy(obs).to(obs_device)
         obs = obs.float() / 255
         
@@ -152,8 +155,8 @@ def run_agent(model, id, env_id, ctrl_device, obs_device, total_start_time, vis_
                 duration = time()-start_time
                 print('Time since start: {} minutes and {} seconds.'.format(duration//60,duration%60))
             '''
-
-            obs = np.reshape(obs, (1,3,96,96))
+            obs = cv2.resize(np.array(obs), dsize=(64,64))
+            obs = np.reshape(obs, (1,3,64,64))
             obs = torch.from_numpy(obs).to(obs_device)
             obs = obs.float() / 255
             
@@ -190,7 +193,7 @@ def run_agent(model, id, env_id, ctrl_device, obs_device, total_start_time, vis_
         print('\n')
         '''
         #print('Aget with id {} had cum_rew of {}'.format(id, cum_rew))
-        return 1000 - cum_rew
+        return -cum_rew
 
 
 def fitness(pop, ctrl_kwargs, model_class, env_id, ctrl_device, obs_device, vis_model, mdn_model):
@@ -287,7 +290,7 @@ def train(config):
     # selection_pressure = config.selection_pressure
     #learning_rate = config.learning_rate
     #epochs = config.epochs
-    #pop_size = config.pop_size
+    pop_size = config.pop_size
     ####
     ####
 
@@ -301,7 +304,7 @@ def train(config):
     # setting up paths
     cur_dir = os.path.dirname(os.path.realpath(__file__))
     model_dir = cur_dir + config.model_dir
-    id_str = 'ctrl_results_better_rollouts/start_var_{}'.format(config.start_var)
+    id_str = 'resized_ctrl_results/start_var_{}'.format(config.start_var)
     
     # init tensorboard
     log_dir = model_dir+id_str+'/'
@@ -319,14 +322,14 @@ def train(config):
     vis_model = modules.VAE(encoder, decoder, encode_only=True).to(device)
     
     # load visual model
-    vis_model_file = 'better_variational_visual_epochs_1/lr_0.0036481/run_0/model.pt'
+    vis_model_file = 'resized_variational_visual_epochs_1/lr_0.0001/run_0/model.pt'
     vis_model.load_state_dict(torch.load(model_dir + vis_model_file, map_location=torch.device(device)))
     vis_model.eval()
     
     # load mdn model
     mdn_params = {'input_dim':z_dim+3, 'lstm_units':lstm_units, 'lstm_layers':lstm_layers, 'nbr_gauss':nbr_gauss, 'mdn_layers':mdn_layers, 'temp':temp}
     mdn_model = modules.MDN_RNN(**mdn_params).to(device)
-    mdn_model_file = 'better_mdnrnn_epochs_20/lr_0.001/temp_1/run_0/model.pt'
+    mdn_model_file = 'resized_mdnrnn_epochs_20/lr_0.001/temp_1/run_0/model.pt'
     mdn_model.load_state_dict(torch.load(model_dir + mdn_model_file, map_location=torch.device(device)))
     mdn_model.eval()
 
@@ -360,7 +363,8 @@ def train(config):
         'fitness_func':fitness_func,
         'stop_fitness':stop_crit,
         'stop_median_fitness':stop_median_crit,
-        'start_var':config.start_var
+        'start_var':config.start_var,
+        'pop_size':pop_size
     }
 
     CMA = CMA_ES(**CMA_parameters)
@@ -402,21 +406,21 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
 
     # Model params
-    parser.add_argument('--input_dim', type=tuple, default=(3,96,96), help='Dimensionality of input picture')
+    parser.add_argument('--input_dim', type=tuple, default=(3,64,64), help='Dimensionality of input picture')
     parser.add_argument('--conv_layers', type=int, default=[[32, 4], [64,4], [128,4], [256,4]], help='List of Conv Layers in the format [[out_0, kernel_size_0], [out_1, kernel_size_1], ...]')
-    parser.add_argument('--deconv_layers', type=int, default=[[128, 4], [64,4], [32,4], [8,4], [3,6]], help='List of Deconv Layers in the format [[out_0, kernel_size_0], [out_1, kernel_size_1], ...]')
+    parser.add_argument('--deconv_layers', type=int, default=[[128, 5], [64,5], [32,6], [3,6]], help='List of Deconv Layers in the format [[out_0, kernel_size_0], [out_1, kernel_size_1], ...]')
     parser.add_argument('--lstm_layers', type=int, default=1, help='Number of layers in the LSTM')
     parser.add_argument('--lstm_units', type=int, default=256, help='Number of LSTM units per layer')
     parser.add_argument('--nbr_gauss', type=int, default=5, help='Number of gaussians for MDN')
-    parser.add_argument('--mdn_layers', type=int, default=[100,100,50,50], help='List of layers in the MDN')
+    parser.add_argument('--mdn_layers', type=int, default=[], help='List of layers in the MDN')
     parser.add_argument('--temp', type=float, default=1, help='Temperature for mixture model')
     parser.add_argument('--ctrl_layers', type=int, default=[], help='List of layers in the Control network')
-    #parser.add_argument('--pop_size', type=int, default=1500, help='Population size for CMA-ES')
+    parser.add_argument('--pop_size', type=int, default=64, help='Population size for CMA-ES')
     parser.add_argument('--num_parallel_agents', type=int, default=8, help='Number of agents run in parallel when evaluating fitness')
     #parser.add_argument('--selection_pressure', type=float, default=0.7, help='Percentage of population that survives each iteration')
-    parser.add_argument('--stop_crit', type=float, default=0.002, help='Best fitness value that needs to be reached')
-    parser.add_argument('--stop_median_crit', type=float, default=0.005, help='Median fitness value that needs to be reached')
-    parser.add_argument('--start_var', type=float, default=10, help='Start variance for cov matrix')
+    parser.add_argument('--stop_crit', type=float, default=-900, help='Best fitness value that needs to be reached')
+    parser.add_argument('--stop_median_crit', type=float, default=-900, help='Median fitness value that needs to be reached')
+    parser.add_argument('--start_var', type=float, default=1, help='Start variance for cov matrix')
     #parser.add_argument('--batch_size', type=int, default=256, help='Number of examples to process in a batch')
     #parser.add_argument('--learning_rate', type=float, default=1e-3, help='Learning rate')
     #parser.add_argument('--epochs', type=int, default=20, help='Number of epochs')

@@ -135,8 +135,8 @@ class Encoder(nn.Module):
 
         # final layer are dense layers to compute mean and variance of 
         # multivariate gaussian
-        self.mu = nn.Linear(4096, z_dim, bias = True)
-        self.var = nn.Linear(4096, z_dim, bias = True)
+        self.mu = nn.Linear(1024, z_dim, bias = True)
+        self.var = nn.Linear(1024, z_dim, bias = True)
     
         # initialize weights
         for layer in self.layers:
@@ -165,10 +165,8 @@ class Encoder(nn.Module):
         
         # pass x through all convolutions
         # activation is relu
+        hidden = x
         for i, layer in enumerate(self.layers):
-            if i == 0: 
-                hidden = F.relu(self.layers[0](x))
-                continue
             hidden = F.relu(layer(hidden))
 
         # flatten
@@ -302,10 +300,13 @@ class MDN(nn.Module):
 
         self.layers = []
 
-        self.layers.append(nn.Linear(in_features=input_dim, out_features=layers[0]))
-        for i in range(len(layers)-1):
-            self.layers.append(nn.Linear(in_features=layers[i], out_features=layers[i+1]))
-        self.layers.append(nn.Linear(in_features=layers[-1], out_features=self.nbr_gauss+2*self.nbr_gauss*self.out_dim)) # (2 + out_dim) * nbr_gauss
+        if layers == []:
+            self.layers.append(nn.Linear(in_features=input_dim, out_features=self.nbr_gauss+2*self.nbr_gauss*self.out_dim))
+        else:
+            self.layers.append(nn.Linear(in_features=input_dim, out_features=layers[0]))
+            for i in range(len(layers)-1):
+                self.layers.append(nn.Linear(in_features=layers[i], out_features=layers[i+1]))
+            self.layers.append(nn.Linear(in_features=layers[-1], out_features=self.nbr_gauss+2*self.nbr_gauss*self.out_dim)) # (2 + out_dim) * nbr_gauss
 
         self.layers = nn.ModuleList(self.layers)
 

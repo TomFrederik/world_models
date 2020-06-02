@@ -413,7 +413,7 @@ if __name__ == "__main__":
     #parser.add_argument('--pop_size', type=int, default=1500, help='Population size for CMA-ES')
     parser.add_argument('--num_parallel_agents', type=int, default=10, help='Number of agents run in parallel when evaluating fitness')
     #parser.add_argument('--selection_pressure', type=float, default=0.7, help='Percentage of population that survives each iteration')
-    parser.add_argument('--stop_crit', type=float, default=0.002, help='Average fitness value that needs to be reached')
+    parser.add_argument('--stop_crit', type=float, default=0.002, help='Best fitness value that needs to be reached')
     parser.add_argument('--stop_median_crit', type=float, default=0.005, help='Median fitness value that needs to be reached')
     #parser.add_argument('--batch_size', type=int, default=256, help='Number of examples to process in a batch')
     #parser.add_argument('--learning_rate', type=float, default=1e-3, help='Learning rate')

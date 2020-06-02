@@ -133,11 +133,11 @@ class CMA_ES:
 
             median_fitness = self.fitness[int(len(self.fitness)//2)]
             
-            writer.add_scalar('mean fitness', mean_fitness, ctr)
-            writer.add_scalar('best fitness', best_fitness, ctr)
-            writer.add_scalar('median fitness', median_fitness, ctr)
-            writer.add_scalar('det covariance', torch.det(self.cov), ctr)
-            writer.add_scalar('entropy', self.dist.entropy().item(), ctr)
+            writer.add_scalar('mean fitness', -mean_fitness, ctr)
+            writer.add_scalar('best fitness', -best_fitness, ctr)
+            writer.add_scalar('median fitness', -median_fitness, ctr)
+            #writer.add_scalar('det covariance', torch.det(self.cov), ctr)
+            #writer.add_scalar('entropy', self.dist.entropy().item(), ctr)
             writer.flush()
 
             print('Just completed step {0:4d}, average fitness of last step was {1:4.5f}'.format(ctr, mean_fitness))
